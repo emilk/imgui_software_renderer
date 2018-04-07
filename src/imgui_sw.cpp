@@ -54,14 +54,9 @@ float max3(float a, float b, float c)
 	return b > c ? b : c;
 }
 
-float edgeFunction(const ImVec2& a, const ImVec2& b, const ImVec2& c)
-{
-	return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
-}
-
 double barycentric(const ImVec2& a, const ImVec2& b, const ImVec2& point)
 {
-    return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+	return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
 }
 
 ImVec2 operator*(const float f, const ImVec2& v)
@@ -250,7 +245,7 @@ Barycentric operator+(const Barycentric& a, const Barycentric& b)
 
 void paint_triangle(
 	const PaintTarget& target,
-	const Texture&     texture,
+	const Texture*     texture,
 	const ImVec4&      clip_rect,
 	const ImDrawVert&  vert_0,
 	const ImDrawVert&  vert_1,
@@ -258,9 +253,6 @@ void paint_triangle(
 	const SwOptions&   options,
 	Stats*             stats)
 {
-	assert(texture.width > 0);
-	assert(texture.height > 0);
-
 	ImVec2 v0 = ImVec2(target.scale.x * vert_0.pos.x, target.scale.y * vert_0.pos.y);
 	ImVec2 v1 = ImVec2(target.scale.x * vert_1.pos.x, target.scale.y * vert_1.pos.y);
 	ImVec2 v2 = ImVec2(target.scale.x * vert_2.pos.x, target.scale.y * vert_2.pos.y);
@@ -299,15 +291,15 @@ void paint_triangle(
 	max_x_i = std::min(max_x_i, target.width);
 	max_y_i = std::min(max_y_i, target.height);
 
+// ImGui uses the first pixel for "white".
 	const bool has_uniform_color = (vert_0.col == vert_1.col && vert_0.col == vert_2.col);
-	const bool has_texture = (vert_0.uv != vert_1.uv || vert_0.uv != vert_2.uv);
 	const ImVec4 uniform_color = color_convert_u32_to_float4(vert_0.col);
 
 	const auto num_pixels = std::abs(determinant / 2.0f);
 
-	if (has_uniform_color && !has_texture) {
+	if (has_uniform_color && !texture) {
 		stats->uniform_triangle_pixels += num_pixels;
-	} else if (has_texture) {
+	} else if (texture) {
 		stats->textured_triangle_pixels += num_pixels;
 	} else {
 		stats->rest_triangle_pixels += num_pixels;
@@ -341,34 +333,32 @@ void paint_triangle(
 	const auto w1_dy = barycentric(v2, v0, topleft + dy) - barycentric(v2, v0, topleft);
 	const auto w2_dy = barycentric(v0, v1, topleft + dy) - barycentric(v0, v1, topleft);
 
-	const Barycentric va0 { 1, 0, 0 };
-	const Barycentric va1 { 0, 1, 0 };
-	const Barycentric va2 { 0, 0, 1 };
+	const Barycentric bary_0 { 1, 0, 0 };
+	const Barycentric bary_1 { 0, 1, 0 };
+	const Barycentric bary_2 { 0, 0, 1 };
 
 	// if (determinant >= 0.0f) { return; } // Backface culling?
 	const auto inv_det = 1 / determinant;
-	const Barycentric va_topleft = inv_det * (w0_row * va0 + w1_row * va1 + w2_row * va2);
-	const Barycentric va_dx  = inv_det * (w0_dx  * va0 + w1_dx  * va1 + w2_dx  * va2);
-	const Barycentric va_dy  = inv_det * (w0_dy  * va0 + w1_dy  * va1 + w2_dy  * va2);
+	const Barycentric bary_topleft = inv_det * (w0_row * bary_0 + w1_row * bary_1 + w2_row * bary_2);
+	const Barycentric bary_dx      = inv_det * (w0_dx  * bary_0 + w1_dx  * bary_1 + w2_dx  * bary_2);
+	const Barycentric bary_dy      = inv_det * (w0_dy  * bary_0 + w1_dy  * bary_1 + w2_dy  * bary_2);
 
-	Barycentric va_current_row = va_topleft;
-
-	const float offset = 0.5f;
+	Barycentric bary_current_row = bary_topleft;
 
 	for (int y = min_y_i; y < max_y_i; ++y) {
-		auto va = va_current_row;
+		auto bary = bary_current_row;
 
 		for (int x = min_x_i; x < max_x_i; ++x) {
-			const double w0 = va.w0;
-			const double w1 = va.w1;
-			const double w2 = va.w2;
-			va += va_dx;
+			const double w0 = bary.w0;
+			const double w1 = bary.w1;
+			const double w2 = bary.w2;
+			bary += bary_dx;
 
 			if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) { continue; }
 
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
 
-			if (has_uniform_color && !has_texture) {
+			if (has_uniform_color && !texture) {
 				target_pixel = blend(ColorInt(target_pixel), ColorInt(vert_0.col)).toUint32();
 				continue;
 			}
@@ -381,19 +371,19 @@ void paint_triangle(
 				src_color = w0 * c0 + w1 * c1 + w2 * c2;
 			}
 
-			if (has_texture) {
+			if (texture) {
 				ImVec2 uv = w0 * vert_0.uv + w1 * vert_1.uv + w2 * vert_2.uv;
 
 				if (options.bilinear_sample) {
-					const float tx = uv.x * texture.width  - offset;
-					const float ty = uv.y * texture.height  - offset;
-					src_color.w = sample_texture(texture, tx, ty);
+					const float tx = uv.x * texture->width  - 0.5f;
+					const float ty = uv.y * texture->height - 0.5f;
+					src_color.w = sample_texture(*texture, tx, ty);
 				} else {
-					int tx = uv.x * (texture.width - 1.0f)  + 1.0f - offset;
-					int ty = uv.y * (texture.height - 1.0f) + 1.0f - offset;
-					assert(0 <= tx && tx < texture.width);
-					assert(0 <= ty && ty < texture.height);
-					const uint8_t texel = texture.pixels[ty * texture.width + tx];
+					const int tx = uv.x * (texture->width  - 1.0f) + 0.5f;
+					const int ty = uv.y * (texture->height - 1.0f) + 0.5f;
+					assert(0 <= tx && tx < texture->width);
+					assert(0 <= ty && ty < texture->height);
+					const uint8_t texel = texture->pixels[ty * texture->width + tx];
 					src_color.w *= texel / 255.0f;
 				}
 			}
@@ -409,7 +399,7 @@ void paint_triangle(
 			target_pixel = color_convert_float4_to_u32(blended_color);
 		}
 
-		va_current_row += va_dy;
+		bary_current_row += bary_dy;
 	}
 }
 
@@ -418,7 +408,6 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 	const ImDrawIdx* idx_buffer = &cmd_list->IdxBuffer[0];
 
 	const ImDrawVert* vertices = cmd_list->VtxBuffer.Data;
-	const auto num_verts = cmd_list->VtxBuffer.size();
 
 	for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.size(); cmd_i++)
 	{
@@ -428,6 +417,10 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 		} else {
 			const auto texture = reinterpret_cast<const Texture*>(pcmd->TextureId);
 			assert(texture);
+
+			// ImGui uses the first pixel for "white".
+			const ImVec2 white_uv = ImVec2(0.5f / texture->width, 0.5f / texture->height);
+
 			for (int i = 0; i + 3 <= pcmd->ElemCount; ) {
 				const ImDrawVert& v0 = vertices[idx_buffer[i + 0]];
 				const ImDrawVert& v1 = vertices[idx_buffer[i + 1]];
@@ -467,14 +460,13 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 							v0.col == v5.col;
 
 						if (has_uniform_color) {
-							const ImVec2 first_pixel_uv = ImVec2(0.5f / texture->width, 0.5f / texture->height);
 							const bool has_uniform_uv =
-								v0.uv == first_pixel_uv &&
-								v1.uv == first_pixel_uv &&
-								v2.uv == first_pixel_uv &&
-								v3.uv == first_pixel_uv &&
-								v4.uv == first_pixel_uv &&
-								v5.uv == first_pixel_uv;
+								v0.uv == white_uv &&
+								v1.uv == white_uv &&
+								v2.uv == white_uv &&
+								v3.uv == white_uv &&
+								v4.uv == white_uv &&
+								v5.uv == white_uv;
 
 							min.x = std::max(min.x, pcmd->ClipRect.x);
 							min.y = std::max(min.y, pcmd->ClipRect.y);
@@ -496,7 +488,8 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 					}
 				}
 
-				paint_triangle(target, *texture, pcmd->ClipRect, v0, v1, v2, options, stats);
+				const bool has_texture = (v0.uv != white_uv || v1.uv != white_uv || v2.uv != white_uv);
+				paint_triangle(target, has_texture ? texture : nullptr, pcmd->ClipRect, v0, v1, v2, options, stats);
 				i += 3;
 			}
 		}

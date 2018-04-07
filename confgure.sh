@@ -4,6 +4,8 @@ set -eu
 
 if [ ! -d ".git" ]; then
 	git init .
+	echo "/build/*" >> .gitignore
+	echo "*.bin" >> .gitignore
 fi
 
 if [ ! -d "third_party" ]; then

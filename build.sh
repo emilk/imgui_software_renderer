@@ -7,6 +7,9 @@ if [ ! -z ${1+x} ] && [ $1 == "clean" ]; then
 	exit 0
 fi
 
+FOLDER_NAME=${PWD##*/}
+BINARY_NAME="$FOLDER_NAME.bin"
+
 mkdir -p build
 
 CXX="ccache g++"
@@ -37,8 +40,12 @@ else
 	CPPFLAGS="$CPPFLAGS -Wno-maybe-uninitialized" # stb
 fi
 
-CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG" # RELEASE BUILD
-# CPPFLAGS="$CPPFLAGS -g -fsanitize=address -fno-omit-frame-pointer" # DEBUG BUILD
+DEBUG_SYMBOLS="-g -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls"
+
+# CPPFLAGS="$CPPFLAGS -g -fsanitize=address -fno-omit-frame-pointer" # DEBUG BUILD with fsanatize
+# CPPFLAGS="$CPPFLAGS $DEBUG_SYMBOLS" # DEBUG BUILD
+CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG $DEBUG_SYMBOLS" # RELEASE BUILD WITH SYMBOLS
+# CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG" # RELEASE BUILD
 
 COMPILE_FLAGS="$CPPFLAGS"
 COMPILE_FLAGS="$COMPILE_FLAGS -I ."
@@ -49,7 +56,7 @@ COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/visit_struct/include"
 LDLIBS="-lstdc++ -lpthread -ldl"
 LDLIBS="$LDLIBS -lSDL2 -lGLEW"
 # LDLIBS="$LDLIBS -lceres -lglog"
-LDLIBS="$LDLIBS -lfftw3f"
+# LDLIBS="$LDLIBS -lfftw3f"
 
 # Platform specific flags:
 if [ "$(uname)" == "Darwin" ]; then
@@ -77,5 +84,9 @@ done
 wait
 
 echo >&2 "Linking..."
-FOLDER_NAME=${PWD##*/}
-$CXX $CPPFLAGS $OBJECTS $LDLIBS -o "$FOLDER_NAME.bin"
+$CXX $CPPFLAGS $OBJECTS $LDLIBS -o "$BINARY_NAME"
+
+echo >&2 "Generating .dSYM..."
+dsymutil "$BINARY_NAME" -o "$BINARY_NAME.dSYM"
+
+echo >&2 "Build done."
