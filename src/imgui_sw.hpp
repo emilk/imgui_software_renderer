@@ -12,7 +12,7 @@ namespace imgui_sw {
 struct SwOptions
 {
 	bool optimize_rectangles = true;
-	bool bilinear_sample     = true;
+	bool bilinear_sample     = false;
 };
 
 // Call once a the start of your program.
