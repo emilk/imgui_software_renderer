@@ -150,18 +150,18 @@ float sample_texture(const Texture& texture, float x, float y)
 		u2 * v2 * i22;
 }
 
-struct ABGR
+struct ColorInt
 {
 	uint32_t a, b, g, r;
 
-	ABGR() = default;
+	ColorInt() = default;
 
-	explicit ABGR(uint32_t x)
+	explicit ColorInt(uint32_t x)
 	{
-		a = (x >> 24u) & 0xFFu;
-		b = (x >> 16u) & 0xFFu;
-		g = (x >>  8u) & 0xFFu;
-		r = (x >>  0u) & 0xFFu;
+		a = (x >> IM_COL32_A_SHIFT) & 0xFFu;
+		b = (x >> IM_COL32_B_SHIFT) & 0xFFu;
+		g = (x >> IM_COL32_G_SHIFT) & 0xFFu;
+		r = (x >> IM_COL32_R_SHIFT) & 0xFFu;
 	}
 
 	uint32_t toUint32() const
@@ -170,9 +170,29 @@ struct ABGR
 	}
 };
 
-inline ABGR blend(ABGR target, ABGR source)
+ImVec4 color_convert_u32_to_float4(ImU32 in)
 {
-	ABGR result;
+	const float s = 1.0f / 255.0f;
+	return ImVec4(
+		((in >> IM_COL32_R_SHIFT) & 0xFF) * s,
+		((in >> IM_COL32_G_SHIFT) & 0xFF) * s,
+		((in >> IM_COL32_B_SHIFT) & 0xFF) * s,
+		((in >> IM_COL32_A_SHIFT) & 0xFF) * s);
+}
+
+ImU32 color_convert_float4_to_u32(const ImVec4& in)
+{
+	ImU32 out;
+	out  = uint32_t(in.x * 255.0f + 0.5f) << IM_COL32_R_SHIFT;
+	out |= uint32_t(in.y * 255.0f + 0.5f) << IM_COL32_G_SHIFT;
+	out |= uint32_t(in.z * 255.0f + 0.5f) << IM_COL32_B_SHIFT;
+	out |= uint32_t(in.w * 255.0f + 0.5f) << IM_COL32_A_SHIFT;
+	return out;
+}
+
+inline ColorInt blend(ColorInt target, ColorInt source)
+{
+	ColorInt result;
 	result.a = source.a; // Whatever.
 	result.b = (source.b * source.a + target.b * (255 - source.a)) / 255;
 	result.g = (source.g * source.a + target.g * (255 - source.a)) / 255;
@@ -184,7 +204,7 @@ void paint_uniform_rectangle(
 	const PaintTarget& target,
 	const ImVec2&      min_f,
 	const ImVec2&      max_f,
-	const ABGR&        color)
+	const ColorInt&        color)
 {
 	// Inclusive integer bounding box:
 	int min_x_i = static_cast<int>(target.scale.x * min_f.x);
@@ -201,38 +221,10 @@ void paint_uniform_rectangle(
 	for (int y = min_y_i; y <= max_y_i; ++y) {
 		for (int x = min_x_i; x <= max_x_i; ++x) {
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
-			target_pixel = blend(ABGR(target_pixel), color).toUint32();
+			target_pixel = blend(ColorInt(target_pixel), color).toUint32();
 		}
 	}
 }
-
-// void paint_textured_rectangle(
-// 	const PaintTarget& target,
-// 	const ImVec2&      min_f,
-// 	const ImVec2&      max_f,
-// 	const ImVec2&      min_uv_f,
-// 	const ImVec2&      max_uv_f,
-// 	const ABGR&        color)
-// {
-// 	// Inclusive integer bounding box:
-// 	int min_x_i = static_cast<int>(target.scale.x * min_f.x);
-// 	int min_y_i = static_cast<int>(target.scale.y * min_f.y);
-// 	int max_x_i = static_cast<int>(target.scale.x * max_f.x);
-// 	int max_y_i = static_cast<int>(target.scale.y * max_f.y);
-
-// 	// Clamp to render target:
-// 	min_x_i = std::max(min_x_i, 0);
-// 	min_y_i = std::max(min_y_i, 0);
-// 	max_x_i = std::min(max_x_i, target.width - 1);
-// 	max_y_i = std::min(max_y_i, target.height - 1);
-
-// 	for (int y = min_y_i; y <= max_y_i; ++y) {
-// 		for (int x = min_x_i; x <= max_x_i; ++x) {
-// 			uint32_t& target_pixel = target.pixels[y * target.width + x];
-// 			target_pixel = blend(ABGR(target_pixel), color).toUint32();
-// 		}
-// 	}
-// }
 
 void paint_triangle(
 	const PaintTarget& target,
@@ -293,9 +285,9 @@ void paint_triangle(
 		stats->rest_triangle_pixels += num_pixels;
 	}
 
-	ImVec4 c0 = ImColor(vert_0.col);
-	ImVec4 c1 = ImColor(vert_1.col);
-	ImVec4 c2 = ImColor(vert_2.col);
+	ImVec4 c0 = color_convert_u32_to_float4(vert_0.col);
+	ImVec4 c1 = color_convert_u32_to_float4(vert_1.col);
+	ImVec4 c2 = color_convert_u32_to_float4(vert_2.col);
 
 	for (int y = min_y_i; y <= max_y_i; ++y) {
 		for (int x = min_x_i; x <= max_x_i; ++x) {
@@ -303,24 +295,19 @@ void paint_triangle(
 			const float w0 = inv_det * edgeFunction(v1, v2, p);
 			const float w1 = inv_det * edgeFunction(v2, v0, p);
 			const float w2 = inv_det * edgeFunction(v0, v1, p);
-			if (w0 <  0.0f || w1 <  0.0f || w2 <  0.0f) { continue; }
-			// if (w0 >= 1.0f || w1 >= 1.0f || w2 >= 1.0f) { continue; }
-
-			ERROR_CONTEXT("w0", w0);
-			ERROR_CONTEXT("w1", w1);
-			ERROR_CONTEXT("w2", w2);
+			if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) { continue; }
 
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
 
 			if (uniform_color && !has_texture) {
-				target_pixel = blend(ABGR(target_pixel), ABGR(vert_0.col)).toUint32();
+				target_pixel = blend(ColorInt(target_pixel), ColorInt(vert_0.col)).toUint32();
 				continue;
 			}
 
 			ImVec4 src_color;
 
 			if (uniform_color) {
-				src_color = ImColor(vert_0.col);
+				src_color = color_convert_u32_to_float4(vert_0.col);
 			} else {
 				src_color = w0 * c0 + w1 * c1 + w2 * c2;
 			}
@@ -345,15 +332,14 @@ void paint_triangle(
 			}
 
 			if (src_color.w <= 0.0f) { continue; }
-			if (src_color.w >= 1.0f)
-			{
-				target_pixel = ImColor(src_color);
+			if (src_color.w >= 1.0f) {
+				target_pixel = color_convert_float4_to_u32(src_color);
 				continue;
 			}
 
-			ImVec4 target_color = ImColor(target_pixel);
+			ImVec4 target_color = color_convert_u32_to_float4(target_pixel);
 			const auto blended_color = src_color.w * src_color + (1.0f - src_color.w) * target_color;
-			target_pixel = ImColor(blended_color);
+			target_pixel = color_convert_float4_to_u32(blended_color);
 		}
 	}
 }
@@ -388,7 +374,7 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 
 				// A lot of the big stuff are uniformly colored rectangles,
 				// so we can save a lot of CPU by detecting them:
-				if (i + 6 <= pcmd->ElemCount) {
+				if (options.optimize_rectangles && i + 6 <= pcmd->ElemCount) {
 					const auto idx_3 = idx_buffer[i + 3];
 					const auto idx_4 = idx_buffer[i + 4];
 					const auto idx_5 = idx_buffer[i + 5];
@@ -432,11 +418,12 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 								max.y = std::min(max.y, pcmd->ClipRect.w);
 								const auto num_pixels = (max.x - min.x) * (max.y - min.y);
 								if (has_uniform_uv) {
-									paint_uniform_rectangle(target, min, max, ABGR(v0.col));
+									paint_uniform_rectangle(target, min, max, ColorInt(v0.col));
 									stats->uniform_rectangle_pixels += num_pixels;
 									i += 6;
 									continue;
 								} else {
+									// TODO: optimize textured triangles
 									stats->textured_rectangle_pixels += num_pixels;
 								}
 							}
@@ -508,7 +495,8 @@ bool show_options(SwOptions* io_options)
 {
 	CHECK_NOTNULL_F(io_options);
 	bool changed = false;
-	changed |= ImGui::Checkbox("bilinear_sample", &io_options->bilinear_sample);
+	changed |= ImGui::Checkbox("optimize_rectangles", &io_options->optimize_rectangles);
+	changed |= ImGui::Checkbox("bilinear_sample",     &io_options->bilinear_sample);
 	return changed;
 }
 
