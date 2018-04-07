@@ -42,10 +42,10 @@ fi
 
 DEBUG_SYMBOLS="-g -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls"
 
-# CPPFLAGS="$CPPFLAGS -g -fsanitize=address -fno-omit-frame-pointer" # DEBUG BUILD with fsanatize
-# CPPFLAGS="$CPPFLAGS $DEBUG_SYMBOLS" # DEBUG BUILD
-CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG $DEBUG_SYMBOLS" # RELEASE BUILD WITH SYMBOLS
-# CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG" # RELEASE BUILD
+# CPPFLAGS="$CPPFLAGS -g -fsanitize=address -fno-omit-frame-pointer" # Debug build with fsanatize
+# CPPFLAGS="$CPPFLAGS $DEBUG_SYMBOLS"                                # Debug build
+CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG $DEBUG_SYMBOLS"                   # Release build with debug symbols
+# CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG"                                  # Release build
 
 COMPILE_FLAGS="$CPPFLAGS"
 COMPILE_FLAGS="$COMPILE_FLAGS -I ."
@@ -69,7 +69,8 @@ else
 	LDLIBS="$LDLIBS -lGL -lkqueue"
 fi
 
-# COMPILE_FLAGS="$COMPILE_FLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1"
+COMPILE_FLAGS="$COMPILE_FLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1"
+COMPILE_FLAGS="$COMPILE_FLAGS -DLOGURU_REDEFINE_ASSERT=1"
 
 echo "Compiling..."
 OBJECTS=""

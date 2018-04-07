@@ -53,7 +53,7 @@ void run_software()
 		SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, width_pixels, height_pixels);
 	CHECK_NOTNULL_F(texture);
 
-	bool full_res = false;
+	bool full_res = (width_pixels == width_points);
 
 	std::vector<uint32_t> pixel_buffer(width_pixels * height_pixels, 0);
 	std::vector<uint32_t> point_buffer(width_points * height_points, 0);
@@ -87,17 +87,19 @@ void run_software()
 		imgui_sw::show_stats();
 		imgui_sdl.paint();
 
-		if (full_res || (width_pixels == width_points)) {
+		double frame_paint_time;
+
+		if (full_res) {
 			std::fill_n(pixel_buffer.data(), pixel_buffer.size(), 0x19191919u);
 			Timer paint_timer;
 			paint_imgui(pixel_buffer.data(), width_pixels, height_pixels, sw_options);
-			paint_time = paint_timer.secs();
+			frame_paint_time = paint_timer.secs();
 		} else {
 			CHECK_LT_F(width_points, width_pixels);
 			std::fill_n(point_buffer.data(), point_buffer.size(), 0x19191919u);
 			Timer paint_timer;
 			paint_imgui(point_buffer.data(), width_points, height_points, sw_options);
-			paint_time = paint_timer.secs();
+			frame_paint_time = paint_timer.secs();
 
 			Timer rescale_timer;
 			const auto scale = height_pixels / height_points;
@@ -110,6 +112,8 @@ void run_software()
 			}
 			rescale_time = rescale_timer.secs();
 		}
+
+		paint_time = 0.95 * paint_time + 0.05 * frame_paint_time;
 
 		SDL_UpdateTexture(texture, nullptr, pixel_buffer.data(), width_pixels * sizeof(Uint32));
 		// SDL_RenderClear(renderer);

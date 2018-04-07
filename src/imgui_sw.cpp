@@ -1,4 +1,4 @@
-// By Emil Ernerfeldt 2015-2018
+// By Emil Ernerfeldt 2018
 // LICENSE:
 //   This software is dual-licensed to the public domain and under the following
 //   license: you are granted a perpetual, irrevocable license to copy, modify,
@@ -15,23 +15,19 @@ namespace {
 
 struct Stats
 {
-	double uniform_triangle_pixels         = 0;
-	double textured_triangle_pixels        = 0;
-	double rest_triangle_pixels            = 0;
-	double uniform_rectangle_pixels        = 0;
-	double textured_rectangle_pixels       = 0;
-	int    num_triangles                   = 0;
-	int    num_single_pixel_wide_triangles = 0;
-	int    num_single_pixel_high_triangles = 0;
-	double single_pixel_wide_pixels        = 0;
-	double single_pixel_high_pixels        = 0;
+	int uniform_triangle_pixels   = 0;
+	int textured_triangle_pixels  = 0;
+	int gradient_triangle_pixels  = 0;
+	double uniform_rectangle_pixels  = 0;
+	double textured_rectangle_pixels = 0;
+	double gradient_rectangle_pixels = 0;
 };
 
 struct Texture
 {
-	std::vector<uint8_t> pixels;
-	int                  width;
-	int                  height;
+	const uint8_t* pixels;
+	int            width;
+	int            height;
 };
 
 struct PaintTarget
@@ -54,7 +50,7 @@ float max3(float a, float b, float c)
 	return b > c ? b : c;
 }
 
-double barycentric(const ImVec2& a, const ImVec2& b, const ImVec2& point)
+float barycentric(const ImVec2& a, const ImVec2& b, const ImVec2& point)
 {
 	return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
 }
@@ -67,11 +63,6 @@ ImVec2 operator*(const float f, const ImVec2& v)
 ImVec2 operator+(const ImVec2& a, const ImVec2& b)
 {
 	return ImVec2{a.x + b.x, a.y + b.y};
-}
-
-bool operator==(const ImVec2& a, const ImVec2& b)
-{
-	return a.x == b.x && a.y == b.y;
 }
 
 bool operator!=(const ImVec2& a, const ImVec2& b)
@@ -87,62 +78,6 @@ ImVec4 operator*(const float f, const ImVec4& v)
 ImVec4 operator+(const ImVec4& a, const ImVec4& b)
 {
 	return ImVec4{a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
-}
-
-float sample_texture(const Texture& texture, float x, float y)
-{
-	const auto xmin = 0.f;
-	const auto ymin = 0.f;
-
-	const auto xmax = static_cast<float>(texture.width  - 1);
-	const auto ymax = static_cast<float>(texture.height - 1);
-
-	auto x1 = std::floor(x);
-	auto y1 = std::floor(y);
-
-	auto x2 = x1 + 1;
-	auto y2 = y1 + 1;
-
-	const auto u1 = x2 - x;
-	const auto v1 = y2 - y;
-
-	const auto u2 = x - x1;
-	const auto v2 = y - y1;
-
-	// Clamp:
-	if (x1 < xmin) {
-		x1 = xmin;
-		x2 = xmin;
-	}
-	if (x2 > xmax) {
-		x1 = xmax;
-		x2 = xmax;
-	}
-	if (y1 < ymin) {
-		y1 = ymin;
-		y2 = ymin;
-	}
-	if (y2 > ymax) {
-		y1 = ymax;
-		y2 = ymax;
-	}
-
-	const auto xi1 = static_cast<size_t>(x1);
-	const auto yi1 = static_cast<size_t>(y1);
-
-	const auto xi2 = static_cast<size_t>(x2);
-	const auto yi2 = static_cast<size_t>(y2);
-
-	const auto i11 = texture.pixels[xi1 + yi1 * texture.width] / 255.0f;
-	const auto i12 = texture.pixels[xi1 + yi2 * texture.width] / 255.0f;
-	const auto i21 = texture.pixels[xi2 + yi1 * texture.width] / 255.0f;
-	const auto i22 = texture.pixels[xi2 + yi2 * texture.width] / 255.0f;
-
-	return
-		u1 * v1 * i11 +
-		u1 * v2 * i12 +
-		u2 * v1 * i21 +
-		u2 * v2 * i22;
 }
 
 struct ColorInt
@@ -188,7 +123,8 @@ ImU32 color_convert_float4_to_u32(const ImVec4& in)
 ColorInt blend(ColorInt target, ColorInt source)
 {
 	ColorInt result;
-	result.a = source.a; // Whatever.
+	// result.a = source.a; // Whatever.
+	// result.a = 255; // Whatever
 	result.b = (source.b * source.a + target.b * (255 - source.a)) / 255;
 	result.g = (source.g * source.a + target.g * (255 - source.a)) / 255;
 	result.r = (source.r * source.a + target.r * (255 - source.a)) / 255;
@@ -201,7 +137,7 @@ void paint_uniform_rectangle(
 	const ImVec2&      max_f,
 	const ColorInt&    color)
 {
-	// Inclusive integer bounding box:
+	// Integer bounding box:
 	int min_x_i = static_cast<int>(target.scale.x * min_f.x + 0.5f);
 	int min_y_i = static_cast<int>(target.scale.y * min_f.y + 0.5f);
 	int max_x_i = static_cast<int>(target.scale.x * max_f.x + 0.5f);
@@ -213,20 +149,30 @@ void paint_uniform_rectangle(
 	max_x_i = std::min(max_x_i, target.width - 1);
 	max_y_i = std::min(max_y_i, target.height - 1);
 
+	// We often blend the same colors over and over again, so optimize for this (saves 25% total cpu):
+	uint32_t last_target_pixel = target.pixels[min_y_i * target.width + min_x_i];
+	uint32_t last_output = blend(ColorInt(last_target_pixel), color).toUint32();
+
 	for (int y = min_y_i; y < max_y_i; ++y) {
 		for (int x = min_x_i; x < max_x_i; ++x) {
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
+			if (target_pixel == last_target_pixel) {
+				target_pixel = last_output;
+				continue;
+			}
+			last_target_pixel = target_pixel;
 			target_pixel = blend(ColorInt(target_pixel), color).toUint32();
+			last_output = target_pixel;
 		}
 	}
 }
 
 struct Barycentric
 {
-	double w0, w1, w2; // Barycentric coordinates
+	float w0, w1, w2; // Barycentric coordinates
 };
 
-Barycentric operator*(const double f, const Barycentric& va)
+Barycentric operator*(const float f, const Barycentric& va)
 {
 	return { f * va.w0, f * va.w1, f * va.w2 };
 }
@@ -250,15 +196,14 @@ void paint_triangle(
 	const ImDrawVert&  vert_0,
 	const ImDrawVert&  vert_1,
 	const ImDrawVert&  vert_2,
-	const SwOptions&   options,
 	Stats*             stats)
 {
 	ImVec2 v0 = ImVec2(target.scale.x * vert_0.pos.x, target.scale.y * vert_0.pos.y);
 	ImVec2 v1 = ImVec2(target.scale.x * vert_1.pos.x, target.scale.y * vert_1.pos.y);
 	ImVec2 v2 = ImVec2(target.scale.x * vert_2.pos.x, target.scale.y * vert_2.pos.y);
 
-	const auto determinant = barycentric(v0, v1, v2);
-	if (determinant == 0.0f) { return; }
+	const auto rect_area = barycentric(v0, v1, v2); // Can be negative
+	if (rect_area == 0.0f) { return; }
 
 	// Find bounding box:
 	float min_x_f = min3(v0.x, v1.x, v2.x);
@@ -266,20 +211,13 @@ void paint_triangle(
 	float max_x_f = max3(v0.x, v1.x, v2.x);
 	float max_y_f = max3(v0.y, v1.y, v2.y);
 
-	const bool single_pixel_wide = (std::fabs(min_x_f - max_x_f) < 1.5f);
-	const bool single_pixel_high = (std::fabs(min_y_f - max_y_f) < 1.5f);
-
-	stats->num_triangles += 1;
-	stats->num_single_pixel_wide_triangles += single_pixel_wide;
-	stats->num_single_pixel_high_triangles += single_pixel_high;
-
 	// Clamp to clip_rect:
 	min_x_f = std::max(min_x_f, target.scale.x * clip_rect.x);
 	min_y_f = std::max(min_y_f, target.scale.y * clip_rect.y);
 	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z);
 	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w);
 
-	// Exclusive integer bounding box:
+	// Integer bounding box:
 	int min_x_i = static_cast<int>(min_x_f + 0.5f);
 	int min_y_i = static_cast<int>(min_y_f + 0.5f);
 	int max_x_i = static_cast<int>(max_x_f + 0.5f);
@@ -291,33 +229,14 @@ void paint_triangle(
 	max_x_i = std::min(max_x_i, target.width);
 	max_y_i = std::min(max_y_i, target.height);
 
-// ImGui uses the first pixel for "white".
 	const bool has_uniform_color = (vert_0.col == vert_1.col && vert_0.col == vert_2.col);
-	const ImVec4 uniform_color = color_convert_u32_to_float4(vert_0.col);
-
-	const auto num_pixels = std::abs(determinant / 2.0f);
-
-	if (has_uniform_color && !texture) {
-		stats->uniform_triangle_pixels += num_pixels;
-	} else if (texture) {
-		stats->textured_triangle_pixels += num_pixels;
-	} else {
-		stats->rest_triangle_pixels += num_pixels;
-	}
-
-	if (single_pixel_high) {
-		stats->single_pixel_high_pixels += num_pixels;
-	}
-
-	if (single_pixel_wide) {
-		stats->single_pixel_wide_pixels += num_pixels;
-	}
 
 	const ImVec4 c0 = color_convert_u32_to_float4(vert_0.col);
 	const ImVec4 c1 = color_convert_u32_to_float4(vert_1.col);
 	const ImVec4 c2 = color_convert_u32_to_float4(vert_2.col);
 
-	const auto topleft  = ImVec2(min_x_i + 0.5f, min_y_i + 0.5f);
+	const auto topleft = ImVec2(min_x_i + 0.5f * target.scale.x,
+	                            min_y_i + 0.5f * target.scale.y);
 	const auto dx = ImVec2(1, 0);
 	const auto dy = ImVec2(0, 1);
 
@@ -337,55 +256,62 @@ void paint_triangle(
 	const Barycentric bary_1 { 0, 1, 0 };
 	const Barycentric bary_2 { 0, 0, 1 };
 
-	// if (determinant >= 0.0f) { return; } // Backface culling?
-	const auto inv_det = 1 / determinant;
-	const Barycentric bary_topleft = inv_det * (w0_row * bary_0 + w1_row * bary_1 + w2_row * bary_2);
-	const Barycentric bary_dx      = inv_det * (w0_dx  * bary_0 + w1_dx  * bary_1 + w2_dx  * bary_2);
-	const Barycentric bary_dy      = inv_det * (w0_dy  * bary_0 + w1_dy  * bary_1 + w2_dy  * bary_2);
+	const auto inv_area = 1 / rect_area;
+	const Barycentric bary_topleft = inv_area * (w0_row * bary_0 + w1_row * bary_1 + w2_row * bary_2);
+	const Barycentric bary_dx      = inv_area * (w0_dx  * bary_0 + w1_dx  * bary_1 + w2_dx  * bary_2);
+	const Barycentric bary_dy      = inv_area * (w0_dy  * bary_0 + w1_dy  * bary_1 + w2_dy  * bary_2);
 
 	Barycentric bary_current_row = bary_topleft;
 
-	for (int y = min_y_i; y < max_y_i; ++y) {
+	// We often blend the same colors over and over again, so optimize for this (saves 10% total cpu):
+	uint32_t last_target_pixel = 0;
+	uint32_t last_output = blend(ColorInt(last_target_pixel), ColorInt(vert_0.col)).toUint32();
+
+	for (int y = min_y_i; y <= max_y_i; ++y) {
 		auto bary = bary_current_row;
 
-		for (int x = min_x_i; x < max_x_i; ++x) {
-			const double w0 = bary.w0;
-			const double w1 = bary.w1;
-			const double w2 = bary.w2;
+		for (int x = min_x_i; x <= max_x_i; ++x) {
+			const auto w0 = bary.w0;
+			const auto w1 = bary.w1;
+			const auto w2 = bary.w2;
 			bary += bary_dx;
 
-			if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) { continue; }
+			const float kEps = 1e-4f;
+			if (w0 < -kEps || w1 < -kEps || w2 < -kEps) { continue; }
 
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
 
 			if (has_uniform_color && !texture) {
+				stats->uniform_triangle_pixels += 1;
+				if (target_pixel == last_target_pixel) {
+					target_pixel = last_output;
+					continue;
+				}
+				last_target_pixel = target_pixel;
 				target_pixel = blend(ColorInt(target_pixel), ColorInt(vert_0.col)).toUint32();
+				last_output = target_pixel;
 				continue;
 			}
 
 			ImVec4 src_color;
 
 			if (has_uniform_color) {
-				src_color = uniform_color;
+				src_color = color_convert_u32_to_float4(vert_0.col);
 			} else {
+				stats->gradient_triangle_pixels += 1;
 				src_color = w0 * c0 + w1 * c1 + w2 * c2;
 			}
 
 			if (texture) {
+				stats->textured_triangle_pixels += 1;
 				ImVec2 uv = w0 * vert_0.uv + w1 * vert_1.uv + w2 * vert_2.uv;
 
-				if (options.bilinear_sample) {
-					const float tx = uv.x * texture->width  - 0.5f;
-					const float ty = uv.y * texture->height - 0.5f;
-					src_color.w = sample_texture(*texture, tx, ty);
-				} else {
-					const int tx = uv.x * (texture->width  - 1.0f) + 0.5f;
-					const int ty = uv.y * (texture->height - 1.0f) + 0.5f;
-					assert(0 <= tx && tx < texture->width);
-					assert(0 <= ty && ty < texture->height);
-					const uint8_t texel = texture->pixels[ty * texture->width + tx];
-					src_color.w *= texel / 255.0f;
-				}
+				const int tx = uv.x * (texture->width  - 1.0f) + 0.5f;
+				const int ty = uv.y * (texture->height - 1.0f) + 0.5f;
+				assert(0 <= tx && tx < texture->width);
+				assert(0 <= ty && ty < texture->height);
+				const uint8_t texel = texture->pixels[ty * texture->width + tx];
+				src_color.w *= texel / 255.0f;
 			}
 
 			if (src_color.w <= 0.0f) { continue; }
@@ -403,97 +329,111 @@ void paint_triangle(
 	}
 }
 
+void paint_draw_cmd(
+	const PaintTarget& target,
+	const ImDrawVert*  vertices,
+	const ImDrawIdx*   idx_buffer,
+	const ImDrawCmd&   pcmd,
+	const SwOptions&   options,
+	Stats*             stats)
+{
+	const auto texture = reinterpret_cast<const Texture*>(pcmd.TextureId);
+	assert(texture);
+
+	// ImGui uses the first pixel for "white".
+	const ImVec2 white_uv = ImVec2(0.5f / texture->width, 0.5f / texture->height);
+
+	for (int i = 0; i + 3 <= pcmd.ElemCount; ) {
+		const ImDrawVert& v0 = vertices[idx_buffer[i + 0]];
+		const ImDrawVert& v1 = vertices[idx_buffer[i + 1]];
+		const ImDrawVert& v2 = vertices[idx_buffer[i + 2]];
+
+		// A lot of the big stuff are uniformly colored rectangles,
+		// so we can save a lot of CPU by detecting them:
+		if (options.optimize_rectangles && i + 6 <= pcmd.ElemCount) {
+			const ImDrawVert& v3 = vertices[idx_buffer[i + 3]];
+			const ImDrawVert& v4 = vertices[idx_buffer[i + 4]];
+			const ImDrawVert& v5 = vertices[idx_buffer[i + 5]];
+
+			ImVec2 min, max;
+			min.x = min3(v0.pos.x, v1.pos.x, v2.pos.x);
+			min.y = min3(v0.pos.y, v1.pos.y, v2.pos.y);
+			max.x = max3(v0.pos.x, v1.pos.x, v2.pos.x);
+			max.y = max3(v0.pos.y, v1.pos.y, v2.pos.y);
+
+			// Not the prettiest way to do this, but it catches all cases
+			// of a rectangle split into two triangle.
+			// TODO: Stop it from also assuming duplicate triangles is one rectangle.
+			if ((v0.pos.x == min.x || v0.pos.x == max.x) &&
+				(v0.pos.y == min.y || v0.pos.y == max.y) &&
+				(v1.pos.x == min.x || v1.pos.x == max.x) &&
+				(v1.pos.y == min.y || v1.pos.y == max.y) &&
+				(v2.pos.x == min.x || v2.pos.x == max.x) &&
+				(v2.pos.y == min.y || v2.pos.y == max.y) &&
+				(v3.pos.x == min.x || v3.pos.x == max.x) &&
+				(v3.pos.y == min.y || v3.pos.y == max.y) &&
+				(v4.pos.x == min.x || v4.pos.x == max.x) &&
+				(v4.pos.y == min.y || v4.pos.y == max.y) &&
+				(v5.pos.x == min.x || v5.pos.x == max.x) &&
+				(v5.pos.y == min.y || v5.pos.y == max.y))
+			{
+				const bool has_uniform_color =
+					v0.col == v1.col &&
+					v0.col == v2.col &&
+					v0.col == v3.col &&
+					v0.col == v4.col &&
+					v0.col == v5.col;
+
+				const bool has_texture =
+					v0.uv != white_uv ||
+					v1.uv != white_uv ||
+					v2.uv != white_uv ||
+					v3.uv != white_uv ||
+					v4.uv != white_uv ||
+					v5.uv != white_uv;
+
+				min.x = std::max(min.x, pcmd.ClipRect.x);
+				min.y = std::max(min.y, pcmd.ClipRect.y);
+				max.x = std::min(max.x, pcmd.ClipRect.z);
+				max.y = std::min(max.y, pcmd.ClipRect.w);
+
+				const auto num_pixels = (max.x - min.x) * (max.y - min.y) * target.scale.x * target.scale.y;
+
+				if (!has_texture && has_uniform_color) {
+					paint_uniform_rectangle(target, min, max, ColorInt(v0.col));
+					stats->uniform_rectangle_pixels += num_pixels;
+					i += 6;
+					continue;
+				} else if (has_uniform_color) {
+					// TODO: optimize
+					stats->textured_rectangle_pixels += num_pixels;
+				} else if (!has_texture) {
+					// TODO: optimize
+					stats->gradient_rectangle_pixels += num_pixels;
+				}
+			}
+		}
+
+		const bool has_texture = (v0.uv != white_uv || v1.uv != white_uv || v2.uv != white_uv);
+		paint_triangle(target, has_texture ? texture : nullptr, pcmd.ClipRect, v0, v1, v2, stats);
+		i += 3;
+	}
+}
+
 void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, const SwOptions& options, Stats* stats)
 {
 	const ImDrawIdx* idx_buffer = &cmd_list->IdxBuffer[0];
-
 	const ImDrawVert* vertices = cmd_list->VtxBuffer.Data;
 
 	for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.size(); cmd_i++)
 	{
-		const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-		if (pcmd->UserCallback) {
-			pcmd->UserCallback(cmd_list, pcmd);
+		const ImDrawCmd& pcmd = cmd_list->CmdBuffer[cmd_i];
+		if (pcmd.UserCallback) {
+			pcmd.UserCallback(cmd_list, &pcmd);
 		} else {
-			const auto texture = reinterpret_cast<const Texture*>(pcmd->TextureId);
-			assert(texture);
-
-			// ImGui uses the first pixel for "white".
-			const ImVec2 white_uv = ImVec2(0.5f / texture->width, 0.5f / texture->height);
-
-			for (int i = 0; i + 3 <= pcmd->ElemCount; ) {
-				const ImDrawVert& v0 = vertices[idx_buffer[i + 0]];
-				const ImDrawVert& v1 = vertices[idx_buffer[i + 1]];
-				const ImDrawVert& v2 = vertices[idx_buffer[i + 2]];
-
-				// A lot of the big stuff are uniformly colored rectangles,
-				// so we can save a lot of CPU by detecting them:
-				if (options.optimize_rectangles && i + 6 <= pcmd->ElemCount) {
-					const ImDrawVert& v3 = vertices[idx_buffer[i + 3]];
-					const ImDrawVert& v4 = vertices[idx_buffer[i + 4]];
-					const ImDrawVert& v5 = vertices[idx_buffer[i + 5]];
-
-					ImVec2 min, max;
-					min.x = min3(v0.pos.x, v1.pos.x, v2.pos.x);
-					min.y = min3(v0.pos.y, v1.pos.y, v2.pos.y);
-					max.x = max3(v0.pos.x, v1.pos.x, v2.pos.x);
-					max.y = max3(v0.pos.y, v1.pos.y, v2.pos.y);
-
-					if ((v0.pos.x == min.x || v0.pos.x == max.x) &&
-						(v0.pos.y == min.y || v0.pos.y == max.y) &&
-						(v1.pos.x == min.x || v1.pos.x == max.x) &&
-						(v1.pos.y == min.y || v1.pos.y == max.y) &&
-						(v2.pos.x == min.x || v2.pos.x == max.x) &&
-						(v2.pos.y == min.y || v2.pos.y == max.y) &&
-						(v3.pos.x == min.x || v3.pos.x == max.x) &&
-						(v3.pos.y == min.y || v3.pos.y == max.y) &&
-						(v4.pos.x == min.x || v4.pos.x == max.x) &&
-						(v4.pos.y == min.y || v4.pos.y == max.y) &&
-						(v5.pos.x == min.x || v5.pos.x == max.x) &&
-						(v5.pos.y == min.y || v5.pos.y == max.y))
-					{
-						const bool has_uniform_color =
-							v0.col == v1.col &&
-							v0.col == v2.col &&
-							v0.col == v3.col &&
-							v0.col == v4.col &&
-							v0.col == v5.col;
-
-						if (has_uniform_color) {
-							const bool has_uniform_uv =
-								v0.uv == white_uv &&
-								v1.uv == white_uv &&
-								v2.uv == white_uv &&
-								v3.uv == white_uv &&
-								v4.uv == white_uv &&
-								v5.uv == white_uv;
-
-							min.x = std::max(min.x, pcmd->ClipRect.x);
-							min.y = std::max(min.y, pcmd->ClipRect.y);
-							max.x = std::min(max.x, pcmd->ClipRect.z);
-							max.y = std::min(max.y, pcmd->ClipRect.w);
-
-							const auto num_pixels = (max.x - min.x) * (max.y - min.y);
-
-							if (has_uniform_uv) {
-								paint_uniform_rectangle(target, min, max, ColorInt(v0.col));
-								stats->uniform_rectangle_pixels += num_pixels;
-								i += 6;
-								continue;
-							} else {
-								// TODO: optimize textured triangles
-								stats->textured_rectangle_pixels += num_pixels;
-							}
-						}
-					}
-				}
-
-				const bool has_texture = (v0.uv != white_uv || v1.uv != white_uv || v2.uv != white_uv);
-				paint_triangle(target, has_texture ? texture : nullptr, pcmd->ClipRect, v0, v1, v2, options, stats);
-				i += 3;
-			}
+			paint_draw_cmd(target, vertices, idx_buffer, pcmd, options, stats);
 		}
-		idx_buffer += pcmd->ElemCount;
+		idx_buffer += pcmd.ElemCount;
 	}
 }
 
@@ -512,15 +452,10 @@ void bind_imgui_painting()
 	ImGuiIO& io = ImGui::GetIO();
 
 	// Load default font (embedded in code):
-	unsigned char* tex_data;
+	uint8_t* tex_data;
 	int font_width, font_height;
 	io.Fonts->GetTexDataAsAlpha8(&tex_data, &font_width, &font_height);
-	const auto texture = new Texture{
-		std::vector<uint8_t>(tex_data, tex_data + font_width * font_height),
-		font_width,
-		font_height
-	};
-
+	const auto texture = new Texture{tex_data, font_width, font_height};
 	io.Fonts->TexID = texture;
 }
 
@@ -552,22 +487,17 @@ bool show_options(SwOptions* io_options)
 	assert(io_options);
 	bool changed = false;
 	changed |= ImGui::Checkbox("optimize_rectangles", &io_options->optimize_rectangles);
-	changed |= ImGui::Checkbox("bilinear_sample",     &io_options->bilinear_sample);
 	return changed;
 }
 
 void show_stats()
 {
-	ImGui::Text("uniform_triangle_pixels:   %7.0f", s_stats.uniform_triangle_pixels);
-	ImGui::Text("textured_triangle_pixels:  %7.0f", s_stats.textured_triangle_pixels);
-	ImGui::Text("rest_triangle_pixels:      %7.0f", s_stats.rest_triangle_pixels);
+	ImGui::Text("uniform_triangle_pixels:   %7d", s_stats.uniform_triangle_pixels);
+	ImGui::Text("textured_triangle_pixels:  %7d", s_stats.textured_triangle_pixels);
+	ImGui::Text("gradient_triangle_pixels:  %7d", s_stats.gradient_triangle_pixels);
 	ImGui::Text("uniform_rectangle_pixels:  %7.0f", s_stats.uniform_rectangle_pixels);
 	ImGui::Text("textured_rectangle_pixels: %7.0f", s_stats.textured_rectangle_pixels);
-	ImGui::Text("num_triangles:                   %d", s_stats.num_triangles);
-	ImGui::Text("num_single_pixel_wide_triangles: %d", s_stats.num_single_pixel_wide_triangles);
-	ImGui::Text("num_single_pixel_high_triangles: %d", s_stats.num_single_pixel_high_triangles);
-	ImGui::Text("single_pixel_wide_pixels:  %7.0f", s_stats.single_pixel_wide_pixels);
-	ImGui::Text("single_pixel_high_pixels:  %7.0f", s_stats.single_pixel_high_pixels);
+	ImGui::Text("gradient_rectangle_pixels: %7.0f", s_stats.gradient_rectangle_pixels);
 }
 
 } // namespace imgui_sw
