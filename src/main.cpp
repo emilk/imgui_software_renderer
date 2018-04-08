@@ -63,7 +63,7 @@ void run_software()
 	imgui_sw::SwOptions sw_options;
 
 	double paint_time = 0;
-	double rescale_time = 0;
+	double upsample_time = 0;
 
 	bool quit = false;
 	while (!quit) {
@@ -86,7 +86,7 @@ void run_software()
 		ImGui::Checkbox("full_res", &full_res);
 		ImGui::Text("Paint time: %.2f ms", 1000 * paint_time);
 		if (!full_res) {
-			ImGui::Text("Rescale time: %.2f ms", 1000 * paint_time);
+			ImGui::Text("Upsample time: %.2f ms", 1000 * paint_time);
 		}
 		imgui_sw::show_options(&sw_options);
 		imgui_sw::show_stats();
@@ -100,14 +100,16 @@ void run_software()
 			paint_imgui(pixel_buffer.data(), width_pixels, height_pixels, sw_options);
 			frame_paint_time = paint_timer.secs();
 		} else {
+			// Render ImGui in low resolution:
 			CHECK_LT_F(width_points, width_pixels);
 			std::fill_n(point_buffer.data(), point_buffer.size(), 0x19191919u);
 			Timer paint_timer;
 			paint_imgui(point_buffer.data(), width_points, height_points, sw_options);
 			frame_paint_time = paint_timer.secs();
 
-			Timer rescale_timer;
-			const auto scale = height_pixels / height_points;
+			// Now upsample it (TODO: a faster way).
+			Timer upsample_timer;
+			const int scale = height_pixels / height_points;
 			for (const auto y_px : irange(0, height_pixels)) {
 				const auto y_pts = y_px / scale;
 				for (const auto x_px : irange(0, width_pixels)) {
@@ -115,7 +117,7 @@ void run_software()
 					pixel_buffer[y_px * width_pixels + x_px] = point_buffer[y_pts * width_points + x_pts];
 				}
 			}
-			rescale_time = rescale_timer.secs();
+			upsample_time = upsample_timer.secs();
 		}
 
 		paint_time = 0.95 * paint_time + 0.05 * frame_paint_time;
@@ -171,5 +173,5 @@ int main(int argc, char* argv[])
 	loguru::init(argc, argv);
 
 	run_software();
-	// run_gl();
+	// run_gl(); // Reference renderer.
 }
