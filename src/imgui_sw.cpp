@@ -15,9 +15,9 @@ namespace {
 
 struct Stats
 {
-	int uniform_triangle_pixels   = 0;
-	int textured_triangle_pixels  = 0;
-	int gradient_triangle_pixels  = 0;
+	int    uniform_triangle_pixels   = 0;
+	int    textured_triangle_pixels  = 0;
+	int    gradient_triangle_pixels  = 0;
 	double uniform_rectangle_pixels  = 0;
 	double textured_rectangle_pixels = 0;
 	double gradient_rectangle_pixels = 0;
@@ -25,7 +25,7 @@ struct Stats
 
 struct Texture
 {
-	const uint8_t* pixels;
+	const uint8_t* pixels; // 8-bit.
 	int            width;
 	int            height;
 };
@@ -38,22 +38,64 @@ struct PaintTarget
 	ImVec2    scale; // Multiply ImGui (point) coordinates with this to get pixel coordinates.
 };
 
-float min3(float a, float b, float c)
+// ----------------------------------------------------------------------------
+
+struct ColorInt
 {
-	if (a < b && a < c) { return a; }
-	return b < c ? b : c;
+	uint32_t a, b, g, r;
+
+	ColorInt() = default;
+
+	explicit ColorInt(uint32_t x)
+	{
+		a = (x >> IM_COL32_A_SHIFT) & 0xFFu;
+		b = (x >> IM_COL32_B_SHIFT) & 0xFFu;
+		g = (x >> IM_COL32_G_SHIFT) & 0xFFu;
+		r = (x >> IM_COL32_R_SHIFT) & 0xFFu;
+	}
+
+	uint32_t toUint32() const
+	{
+		return (a << 24u) | (b << 16u) | (g << 8u) | r;
+	}
+};
+
+ColorInt blend(ColorInt target, ColorInt source)
+{
+	ColorInt result;
+	result.a = 0; // Whatever.
+	result.b = (source.b * source.a + target.b * (255 - source.a)) / 255;
+	result.g = (source.g * source.a + target.g * (255 - source.a)) / 255;
+	result.r = (source.r * source.a + target.r * (255 - source.a)) / 255;
+	return result;
 }
 
-float max3(float a, float b, float c)
+// ----------------------------------------------------------------------------
+
+struct Barycentric
 {
-	if (a > b && a > c) { return a; }
-	return b > c ? b : c;
+	float w0, w1, w2;
+};
+
+Barycentric operator*(const float f, const Barycentric& va)
+{
+	return { f * va.w0, f * va.w1, f * va.w2 };
 }
 
-float barycentric(const ImVec2& a, const ImVec2& b, const ImVec2& point)
+void operator+=(Barycentric& a, const Barycentric& b)
 {
-	return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+	a.w0 += b.w0;
+	a.w1 += b.w1;
+	a.w2 += b.w2;
 }
+
+Barycentric operator+(const Barycentric& a, const Barycentric& b)
+{
+	return Barycentric{ a.w0 + b.w0, a.w1 + b.w1, a.w2 + b.w2 };
+}
+
+// ----------------------------------------------------------------------------
+// Useful operators on ImGui vectors:
 
 ImVec2 operator*(const float f, const ImVec2& v)
 {
@@ -80,25 +122,8 @@ ImVec4 operator+(const ImVec4& a, const ImVec4& b)
 	return ImVec4{a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
 }
 
-struct ColorInt
-{
-	uint32_t a, b, g, r;
-
-	ColorInt() = default;
-
-	explicit ColorInt(uint32_t x)
-	{
-		a = (x >> IM_COL32_A_SHIFT) & 0xFFu;
-		b = (x >> IM_COL32_B_SHIFT) & 0xFFu;
-		g = (x >> IM_COL32_G_SHIFT) & 0xFFu;
-		r = (x >> IM_COL32_R_SHIFT) & 0xFFu;
-	}
-
-	uint32_t toUint32() const
-	{
-		return (a << 24u) | (b << 16u) | (g << 8u) | r;
-	}
-};
+// ----------------------------------------------------------------------------
+// Copies of functions in ImGui, inlined for speed:
 
 ImVec4 color_convert_u32_to_float4(ImU32 in)
 {
@@ -120,15 +145,23 @@ ImU32 color_convert_float4_to_u32(const ImVec4& in)
 	return out;
 }
 
-ColorInt blend(ColorInt target, ColorInt source)
+// ----------------------------------------------------------------------------
+
+float min3(float a, float b, float c)
 {
-	ColorInt result;
-	// result.a = source.a; // Whatever.
-	// result.a = 255; // Whatever
-	result.b = (source.b * source.a + target.b * (255 - source.a)) / 255;
-	result.g = (source.g * source.a + target.g * (255 - source.a)) / 255;
-	result.r = (source.r * source.a + target.r * (255 - source.a)) / 255;
-	return result;
+	if (a < b && a < c) { return a; }
+	return b < c ? b : c;
+}
+
+float max3(float a, float b, float c)
+{
+	if (a > b && a > c) { return a; }
+	return b > c ? b : c;
+}
+
+float barycentric(const ImVec2& a, const ImVec2& b, const ImVec2& point)
+{
+	return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
 }
 
 void paint_uniform_rectangle(
@@ -137,7 +170,7 @@ void paint_uniform_rectangle(
 	const ImVec2&      max_f,
 	const ColorInt&    color)
 {
-	// Integer bounding box:
+	// Integer bounding box [min, max):
 	int min_x_i = static_cast<int>(target.scale.x * min_f.x + 0.5f);
 	int min_y_i = static_cast<int>(target.scale.y * min_f.y + 0.5f);
 	int max_x_i = static_cast<int>(target.scale.x * max_f.x + 0.5f);
@@ -146,8 +179,8 @@ void paint_uniform_rectangle(
 	// Clamp to render target:
 	min_x_i = std::max(min_x_i, 0);
 	min_y_i = std::max(min_y_i, 0);
-	max_x_i = std::min(max_x_i, target.width - 1);
-	max_y_i = std::min(max_y_i, target.height - 1);
+	max_x_i = std::min(max_x_i, target.width);
+	max_y_i = std::min(max_y_i, target.height);
 
 	// We often blend the same colors over and over again, so optimize for this (saves 25% total cpu):
 	uint32_t last_target_pixel = target.pixels[min_y_i * target.width + min_x_i];
@@ -167,49 +200,27 @@ void paint_uniform_rectangle(
 	}
 }
 
-struct Barycentric
-{
-	float w0, w1, w2; // Barycentric coordinates
-};
-
-Barycentric operator*(const float f, const Barycentric& va)
-{
-	return { f * va.w0, f * va.w1, f * va.w2 };
-}
-
-void operator+=(Barycentric& a, const Barycentric& b)
-{
-	a.w0 += b.w0;
-	a.w1 += b.w1;
-	a.w2 += b.w2;
-}
-
-Barycentric operator+(const Barycentric& a, const Barycentric& b)
-{
-	return Barycentric{ a.w0 + b.w0, a.w1 + b.w1, a.w2 + b.w2 };
-}
-
 void paint_triangle(
 	const PaintTarget& target,
 	const Texture*     texture,
 	const ImVec4&      clip_rect,
-	const ImDrawVert&  vert_0,
-	const ImDrawVert&  vert_1,
-	const ImDrawVert&  vert_2,
+	const ImDrawVert&  v0,
+	const ImDrawVert&  v1,
+	const ImDrawVert&  v2,
 	Stats*             stats)
 {
-	ImVec2 v0 = ImVec2(target.scale.x * vert_0.pos.x, target.scale.y * vert_0.pos.y);
-	ImVec2 v1 = ImVec2(target.scale.x * vert_1.pos.x, target.scale.y * vert_1.pos.y);
-	ImVec2 v2 = ImVec2(target.scale.x * vert_2.pos.x, target.scale.y * vert_2.pos.y);
+	const ImVec2 p0 = ImVec2(target.scale.x * v0.pos.x, target.scale.y * v0.pos.y);
+	const ImVec2 p1 = ImVec2(target.scale.x * v1.pos.x, target.scale.y * v1.pos.y);
+	const ImVec2 p2 = ImVec2(target.scale.x * v2.pos.x, target.scale.y * v2.pos.y);
 
-	const auto rect_area = barycentric(v0, v1, v2); // Can be negative
+	const auto rect_area = barycentric(p0, p1, p2); // Can be negative
 	if (rect_area == 0.0f) { return; }
 
 	// Find bounding box:
-	float min_x_f = min3(v0.x, v1.x, v2.x);
-	float min_y_f = min3(v0.y, v1.y, v2.y);
-	float max_x_f = max3(v0.x, v1.x, v2.x);
-	float max_y_f = max3(v0.y, v1.y, v2.y);
+	float min_x_f = min3(p0.x, p1.x, p2.x);
+	float min_y_f = min3(p0.y, p1.y, p2.y);
+	float max_x_f = max3(p0.x, p1.x, p2.x);
+	float max_y_f = max3(p0.y, p1.y, p2.y);
 
 	// Clamp to clip_rect:
 	min_x_f = std::max(min_x_f, target.scale.x * clip_rect.x);
@@ -217,7 +228,7 @@ void paint_triangle(
 	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z);
 	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w);
 
-	// Integer bounding box:
+	// Inclusive [min, max] integer bounding box:
 	int min_x_i = static_cast<int>(min_x_f + 0.5f);
 	int min_y_i = static_cast<int>(min_y_f + 0.5f);
 	int max_x_i = static_cast<int>(max_x_f + 0.5f);
@@ -226,46 +237,51 @@ void paint_triangle(
 	// Clamp to render target:
 	min_x_i = std::max(min_x_i, 0);
 	min_y_i = std::max(min_y_i, 0);
-	max_x_i = std::min(max_x_i, target.width);
-	max_y_i = std::min(max_y_i, target.height);
+	max_x_i = std::min(max_x_i, target.width - 1);
+	max_y_i = std::min(max_y_i, target.height - 1);
 
-	const bool has_uniform_color = (vert_0.col == vert_1.col && vert_0.col == vert_2.col);
-
-	const ImVec4 c0 = color_convert_u32_to_float4(vert_0.col);
-	const ImVec4 c1 = color_convert_u32_to_float4(vert_1.col);
-	const ImVec4 c2 = color_convert_u32_to_float4(vert_2.col);
+	// ------------------------------------------------------------------------
+	// Set up interpolation of barycentric coordinates:
 
 	const auto topleft = ImVec2(min_x_i + 0.5f * target.scale.x,
 	                            min_y_i + 0.5f * target.scale.y);
 	const auto dx = ImVec2(1, 0);
 	const auto dy = ImVec2(0, 1);
 
-	const auto w0_row = barycentric(v1, v2, topleft);
-	const auto w1_row = barycentric(v2, v0, topleft);
-	const auto w2_row = barycentric(v0, v1, topleft);
+	const auto w0_topleft = barycentric(p1, p2, topleft);
+	const auto w1_topleft = barycentric(p2, p0, topleft);
+	const auto w2_topleft = barycentric(p0, p1, topleft);
 
-	const auto w0_dx = barycentric(v1, v2, topleft + dx) - barycentric(v1, v2, topleft);
-	const auto w1_dx = barycentric(v2, v0, topleft + dx) - barycentric(v2, v0, topleft);
-	const auto w2_dx = barycentric(v0, v1, topleft + dx) - barycentric(v0, v1, topleft);
+	const auto w0_dx = barycentric(p1, p2, topleft + dx) - w0_topleft;
+	const auto w1_dx = barycentric(p2, p0, topleft + dx) - w1_topleft;
+	const auto w2_dx = barycentric(p0, p1, topleft + dx) - w2_topleft;
 
-	const auto w0_dy = barycentric(v1, v2, topleft + dy) - barycentric(v1, v2, topleft);
-	const auto w1_dy = barycentric(v2, v0, topleft + dy) - barycentric(v2, v0, topleft);
-	const auto w2_dy = barycentric(v0, v1, topleft + dy) - barycentric(v0, v1, topleft);
+	const auto w0_dy = barycentric(p1, p2, topleft + dy) - w0_topleft;
+	const auto w1_dy = barycentric(p2, p0, topleft + dy) - w1_topleft;
+	const auto w2_dy = barycentric(p0, p1, topleft + dy) - w2_topleft;
 
 	const Barycentric bary_0 { 1, 0, 0 };
 	const Barycentric bary_1 { 0, 1, 0 };
 	const Barycentric bary_2 { 0, 0, 1 };
 
 	const auto inv_area = 1 / rect_area;
-	const Barycentric bary_topleft = inv_area * (w0_row * bary_0 + w1_row * bary_1 + w2_row * bary_2);
-	const Barycentric bary_dx      = inv_area * (w0_dx  * bary_0 + w1_dx  * bary_1 + w2_dx  * bary_2);
-	const Barycentric bary_dy      = inv_area * (w0_dy  * bary_0 + w1_dy  * bary_1 + w2_dy  * bary_2);
+	const Barycentric bary_topleft = inv_area * (w0_topleft * bary_0 + w1_topleft * bary_1 + w2_topleft * bary_2);
+	const Barycentric bary_dx      = inv_area * (w0_dx      * bary_0 + w1_dx      * bary_1 + w2_dx      * bary_2);
+	const Barycentric bary_dy      = inv_area * (w0_dy      * bary_0 + w1_dy      * bary_1 + w2_dy      * bary_2);
 
 	Barycentric bary_current_row = bary_topleft;
 
+	// ------------------------------------------------------------------------
+
+	const bool has_uniform_color = (v0.col == v1.col && v0.col == v2.col);
+
+	const ImVec4 c0 = color_convert_u32_to_float4(v0.col);
+	const ImVec4 c1 = color_convert_u32_to_float4(v1.col);
+	const ImVec4 c2 = color_convert_u32_to_float4(v2.col);
+
 	// We often blend the same colors over and over again, so optimize for this (saves 10% total cpu):
 	uint32_t last_target_pixel = 0;
-	uint32_t last_output = blend(ColorInt(last_target_pixel), ColorInt(vert_0.col)).toUint32();
+	uint32_t last_output = blend(ColorInt(last_target_pixel), ColorInt(v0.col)).toUint32();
 
 	for (int y = min_y_i; y <= max_y_i; ++y) {
 		auto bary = bary_current_row;
@@ -277,7 +293,7 @@ void paint_triangle(
 			bary += bary_dx;
 
 			const float kEps = 1e-4f;
-			if (w0 < -kEps || w1 < -kEps || w2 < -kEps) { continue; }
+			if (w0 < -kEps || w1 < -kEps || w2 < -kEps) { continue; } // Outside triangle
 
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
 
@@ -288,7 +304,7 @@ void paint_triangle(
 					continue;
 				}
 				last_target_pixel = target_pixel;
-				target_pixel = blend(ColorInt(target_pixel), ColorInt(vert_0.col)).toUint32();
+				target_pixel = blend(ColorInt(target_pixel), ColorInt(v0.col)).toUint32();
 				last_output = target_pixel;
 				continue;
 			}
@@ -296,7 +312,7 @@ void paint_triangle(
 			ImVec4 src_color;
 
 			if (has_uniform_color) {
-				src_color = color_convert_u32_to_float4(vert_0.col);
+				src_color = color_convert_u32_to_float4(v0.col);
 			} else {
 				stats->gradient_triangle_pixels += 1;
 				src_color = w0 * c0 + w1 * c1 + w2 * c2;
@@ -304,8 +320,7 @@ void paint_triangle(
 
 			if (texture) {
 				stats->textured_triangle_pixels += 1;
-				ImVec2 uv = w0 * vert_0.uv + w1 * vert_1.uv + w2 * vert_2.uv;
-
+				const ImVec2 uv = w0 * v0.uv + w1 * v1.uv + w2 * v2.uv;
 				const int tx = uv.x * (texture->width  - 1.0f) + 0.5f;
 				const int ty = uv.y * (texture->height - 1.0f) + 0.5f;
 				assert(0 <= tx && tx < texture->width);
@@ -314,8 +329,9 @@ void paint_triangle(
 				src_color.w *= texel / 255.0f;
 			}
 
-			if (src_color.w <= 0.0f) { continue; }
+			if (src_color.w <= 0.0f) { continue; } // Transparent.
 			if (src_color.w >= 1.0f) {
+				// Opaque, no blending needed:
 				target_pixel = color_convert_float4_to_u32(src_color);
 				continue;
 			}
@@ -405,10 +421,10 @@ void paint_draw_cmd(
 					i += 6;
 					continue;
 				} else if (has_uniform_color) {
-					// TODO: optimize
+					// TODO: optimize this path.
 					stats->textured_rectangle_pixels += num_pixels;
 				} else if (!has_texture) {
-					// TODO: optimize
+					// TODO: optimize this path.
 					stats->gradient_rectangle_pixels += num_pixels;
 				}
 			}
@@ -442,9 +458,11 @@ void paint_draw_list(const PaintTarget& target, const ImDrawList* cmd_list, cons
 void make_style_fast()
 {
 	ImGuiStyle& style = ImGui::GetStyle();
+
 	style.AntiAliasedLines = false;
 	style.AntiAliasedFill = false;
 	style.WindowRounding = 0;
+	// style.Colors[ImGuiCol_WindowBg].w = 1.0; // Doesn't actually help much.
 }
 
 void bind_imgui_painting()
@@ -459,7 +477,7 @@ void bind_imgui_painting()
 	io.Fonts->TexID = texture;
 }
 
-Stats s_stats;
+static Stats s_stats; // TODO: pass as an argument?
 
 void paint_imgui(uint32_t* pixels, int width_pixels, int height_pixels, const SwOptions& options)
 {

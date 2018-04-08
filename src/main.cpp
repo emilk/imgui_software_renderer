@@ -1,8 +1,8 @@
 #include <SDL2/SDL.h>
 
-#include <emilib/irange.hpp>
 #include <emilib/imgui_helpers.hpp>
 #include <emilib/imgui_sdl.hpp>
+#include <emilib/irange.hpp>
 #include <emilib/timer.hpp>
 #include <loguru.hpp>
 
@@ -32,7 +32,7 @@ void run_software()
 #endif
 
 	const auto window = SDL_CreateWindow("ImGui Software Renderer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width_points, height_points, window_flags);
-	CHECK_NOTNULL_F(window, "Failed to create software renderer: %s", SDL_GetError());
+	CHECK_NOTNULL_F(window, "Failed to create window: %s", SDL_GetError());
 
 	SDL_GetWindowSize(window, &width_points, &height_points);
 
@@ -78,6 +78,11 @@ void run_software()
 			imgui_helpers::show_im_gui_menu();
 			ImGui::EndMainMenuBar();
 		}
+
+		if (ImGui::Button("Tweak ImGui style for speed")) {
+			imgui_sw::make_style_fast();
+		}
+
 		ImGui::Checkbox("full_res", &full_res);
 		ImGui::Text("Paint time: %.2f ms", 1000 * paint_time);
 		if (!full_res) {
