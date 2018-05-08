@@ -16,7 +16,8 @@ This renders in 4 ms on my MacBook Pro:
 
 # How to test it
 ```
-git clone git@github.com:emilk/imgui_software_renderer.git
+git clone https://github.com/emilk/imgui_software_renderer.git
+cd imgui_software_renderer
 git submodule update --init --recursive
 ./build_and_run.sh
 ```

@@ -12,11 +12,11 @@ if [ ! -d "third_party" ]; then
 	mkdir -p "third_party"
 	pushd "third_party"
 
-	# git submodule add git@github.com:cbeck88/visit_struct.git
-	# git submodule add git@github.com:emilk/emath.git
-	git submodule add git@github.com:emilk/emilib.git
-	# git submodule add git@github.com:nothings/stb.git
-	git submodule add git@github.com:ocornut/imgui.git
+	# git submodule add https://github.com/cbeck88/visit_struct.git
+	# git submodule add https://github.com/emilk/emath.git
+	git submodule add https://github.com/emilk/emilib.git
+	# git submodule add https://github.com/nothings/stb.git
+	git submodule add https://github.com/ocornut/imgui.git
 
 	pushd imgui
 		git checkout tags/v1.60
