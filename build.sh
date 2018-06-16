@@ -63,6 +63,8 @@ DEBUG_SYMBOLS="-g -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-opti
 # CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG $DEBUG_SYMBOLS"       # Release build with debug symbols
 CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG"                      # Release build
 
+CPPFLAGS="$CPPFLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS"
+
 COMPILE_FLAGS="$CPPFLAGS"
 COMPILE_FLAGS="$COMPILE_FLAGS -I ."
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party"
