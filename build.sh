@@ -16,12 +16,28 @@ CXX="ccache g++"
 CPPFLAGS="--std=c++14"
 # CPPFLAGS="--std=c++1z" # C++17
 
-CPPFLAGS="$CPPFLAGS -Werror -Wall -Wpedantic -Wextra -Wunreachable-code"
+CPPFLAGS="$CPPFLAGS -Werror -Wall -Wpedantic -Wextra -Weverything -Wunreachable-code"
 
 CPPFLAGS="$CPPFLAGS -Wno-double-promotion" # Implicitly converting a float to a double is fine
+CPPFLAGS="$CPPFLAGS -Wno-float-equal" # Comparing floating point numbers is fine if you know what you're doing
 CPPFLAGS="$CPPFLAGS -Wno-shorten-64-to-32"
 CPPFLAGS="$CPPFLAGS -Wno-sign-compare"
 CPPFLAGS="$CPPFLAGS -Wno-sign-conversion"
+
+# Turn off some warning that -Weverything turns on:
+CPPFLAGS="$CPPFLAGS -Wno-c++98-compat"
+CPPFLAGS="$CPPFLAGS -Wno-c++98-compat-pedantic"
+# CPPFLAGS="$CPPFLAGS -Wno-covered-switch-default"
+CPPFLAGS="$CPPFLAGS -Wno-disabled-macro-expansion"
+CPPFLAGS="$CPPFLAGS -Wno-documentation"
+CPPFLAGS="$CPPFLAGS -Wno-documentation-unknown-command"
+CPPFLAGS="$CPPFLAGS -Wno-exit-time-destructors"
+# CPPFLAGS="$CPPFLAGS -Wno-global-constructors"
+# CPPFLAGS="$CPPFLAGS -Wno-missing-noreturn"
+CPPFLAGS="$CPPFLAGS -Wno-missing-prototypes"
+CPPFLAGS="$CPPFLAGS -Wno-padded"
+CPPFLAGS="$CPPFLAGS -Wno-reserved-id-macro"
+CPPFLAGS="$CPPFLAGS -Wno-unused-macros"
 
 # TEMPORARY:
 # CPPFLAGS="$CPPFLAGS -Wno-unused-function"
@@ -42,10 +58,10 @@ fi
 
 DEBUG_SYMBOLS="-g -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls"
 
-# CPPFLAGS="$CPPFLAGS -g -fsanitize=address -fno-omit-frame-pointer" # Debug build with fsanatize
-# CPPFLAGS="$CPPFLAGS $DEBUG_SYMBOLS"                                # Debug build
-CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG $DEBUG_SYMBOLS"                   # Release build with debug symbols
-# CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG"                                  # Release build
+# CPPFLAGS="$CPPFLAGS $DEBUG_SYMBOLS -fsanitize=address" # Debug build with fsanatize
+# CPPFLAGS="$CPPFLAGS $DEBUG_SYMBOLS"                    # Debug build
+# CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG $DEBUG_SYMBOLS"       # Release build with debug symbols
+CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG"                      # Release build
 
 COMPILE_FLAGS="$CPPFLAGS"
 COMPILE_FLAGS="$COMPILE_FLAGS -I ."

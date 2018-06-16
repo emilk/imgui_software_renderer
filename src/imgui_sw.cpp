@@ -321,8 +321,8 @@ void paint_triangle(
 			if (texture) {
 				stats->textured_triangle_pixels += 1;
 				const ImVec2 uv = w0 * v0.uv + w1 * v1.uv + w2 * v2.uv;
-				const int tx = uv.x * (texture->width  - 1.0f) + 0.5f;
-				const int ty = uv.y * (texture->height - 1.0f) + 0.5f;
+				const int tx = static_cast<int>(uv.x * (texture->width  - 1.0f) + 0.5f);
+				const int ty = static_cast<int>(uv.y * (texture->height - 1.0f) + 0.5f);
 				assert(0 <= tx && tx < texture->width);
 				assert(0 <= ty && ty < texture->height);
 				const uint8_t texel = texture->pixels[ty * texture->width + tx];

@@ -39,7 +39,7 @@ void run_software()
 	int width_pixels, height_pixels;
 	SDL_GL_GetDrawableSize(window, &width_pixels, &height_pixels);
 
-	const auto pixels_per_point = (float)width_pixels / (float)width_points;
+	const auto pixels_per_point = static_cast<float>(width_pixels) / static_cast<float>(width_points);
 
 	LOG_F(INFO, "%dx%d points (%dx%d pixels)", width_points, height_points, width_pixels, height_pixels);
 
