@@ -15,12 +15,14 @@ namespace {
 
 struct Stats
 {
-	int    uniform_triangle_pixels   = 0;
-	int    textured_triangle_pixels  = 0;
-	int    gradient_triangle_pixels  = 0;
-	double uniform_rectangle_pixels  = 0;
-	double textured_rectangle_pixels = 0;
-	double gradient_rectangle_pixels = 0;
+	int    uniform_triangle_pixels            = 0;
+	int    textured_triangle_pixels           = 0;
+	int    gradient_triangle_pixels           = 0;
+	int    font_pixels                        = 0;
+	double uniform_rectangle_pixels           = 0;
+	double textured_rectangle_pixels          = 0;
+	double gradient_rectangle_pixels          = 0;
+	double gradient_textured_rectangle_pixels = 0;
 };
 
 struct Texture
@@ -197,6 +199,20 @@ float barycentric(const ImVec2& a, const ImVec2& b, const ImVec2& point)
 	return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
 }
 
+inline uint8_t sample_texture(const Texture& texture, const ImVec2& uv)
+{
+	int tx = static_cast<int>(uv.x * (texture.width  - 1.0f) + 0.5f);
+	int ty = static_cast<int>(uv.y * (texture.height - 1.0f) + 0.5f);
+
+	// Clamp to inside of texture:
+	tx = std::max(tx, 0);
+	tx = std::min(tx, texture.width - 1);
+	ty = std::max(ty, 0);
+	ty = std::min(ty, texture.height - 1);
+
+	return texture.pixels[ty * texture.width + tx];
+}
+
 void paint_uniform_rectangle(
 	const PaintTarget& target,
 	const ImVec2&      min_f,
@@ -229,6 +245,77 @@ void paint_uniform_rectangle(
 			last_target_pixel = target_pixel;
 			target_pixel = blend(ColorInt(target_pixel), color).toUint32();
 			last_output = target_pixel;
+		}
+	}
+}
+
+void paint_uniform_textured_rectangle(
+	const PaintTarget& target,
+	const Texture&     texture,
+	const ImVec4&      clip_rect,
+	const ImDrawVert&  min_v,
+	const ImDrawVert&  max_v,
+	Stats*             stats)
+{
+	const ImVec2 min_p = ImVec2(target.scale.x * min_v.pos.x, target.scale.y * min_v.pos.y);
+	const ImVec2 max_p = ImVec2(target.scale.x * max_v.pos.x, target.scale.y * max_v.pos.y);
+
+	// Find bounding box:
+	float min_x_f = min_p.x;
+	float min_y_f = min_p.y;
+	float max_x_f = max_p.x;
+	float max_y_f = max_p.y;
+
+	// Clip against clip_rect:
+	min_x_f = std::max(min_x_f, target.scale.x * clip_rect.x);
+	min_y_f = std::max(min_y_f, target.scale.y * clip_rect.y);
+	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z - 0.5f);
+	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w - 0.5f);
+
+	// Integer bounding box [min, max):
+	int min_x_i = static_cast<int>(min_x_f);
+	int min_y_i = static_cast<int>(min_y_f);
+	int max_x_i = static_cast<int>(max_x_f + 1.0f);
+	int max_y_i = static_cast<int>(max_y_f + 1.0f);
+
+	// Clip against render target:
+	min_x_i = std::max(min_x_i, 0);
+	min_y_i = std::max(min_y_i, 0);
+	max_x_i = std::min(max_x_i, target.width);
+	max_y_i = std::min(max_y_i, target.height);
+
+	stats->font_pixels += (max_x_i - min_x_i) * (max_y_i - min_y_i);
+
+	const auto topleft = ImVec2(min_x_i + 0.5f * target.scale.x,
+	                            min_y_i + 0.5f * target.scale.y);
+
+	const ImVec2 delta_uv_per_pixel = {
+		(max_v.uv.x - min_v.uv.x) / (max_p.x - min_p.x),
+		(max_v.uv.y - min_v.uv.y) / (max_p.y - min_p.y),
+	};
+	const ImVec2 uv_topleft = {
+		min_v.uv.x + (topleft.x - min_v.pos.x) * delta_uv_per_pixel.x,
+		min_v.uv.y + (topleft.y - min_v.pos.y) * delta_uv_per_pixel.y,
+	};
+	ImVec2 current_uv = uv_topleft;
+
+	for (int y = min_y_i; y < max_y_i; ++y, current_uv.y += delta_uv_per_pixel.y) {
+		current_uv.x = uv_topleft.x;
+		for (int x = min_x_i; x < max_x_i; ++x, current_uv.x += delta_uv_per_pixel.x) {
+			uint32_t& target_pixel = target.pixels[y * target.width + x];
+			const uint8_t texel = sample_texture(texture, current_uv);
+
+			// The font texture is all black or all white, so optimize for this:
+			if (texel == 0) { continue; }
+			if (texel == 255) {
+				target_pixel = min_v.col;
+				continue;
+			}
+
+			// Other textured rectangles
+			ColorInt source_color = ColorInt(min_v.col);
+			source_color.a = source_color.a * texel / 255;
+			target_pixel = blend(ColorInt(target_pixel), source_color).toUint32();
 		}
 	}
 }
@@ -394,12 +481,7 @@ void paint_triangle(
 			if (texture) {
 				stats->textured_triangle_pixels += 1;
 				const ImVec2 uv = w0 * v0.uv + w1 * v1.uv + w2 * v2.uv;
-				const int tx = static_cast<int>(uv.x * (texture->width  - 1.0f) + 0.5f);
-				const int ty = static_cast<int>(uv.y * (texture->height - 1.0f) + 0.5f);
-				assert(0 <= tx && tx < texture->width);
-				assert(0 <= ty && ty < texture->height);
-				const uint8_t texel = texture->pixels[ty * texture->width + tx];
-				src_color.w *= texel / 255.0f;
+				src_color.w *= sample_texture(*texture, uv) / 255.0f;
 			}
 
 			if (src_color.w <= 0.0f) { continue; } // Transparent.
@@ -436,6 +518,41 @@ void paint_draw_cmd(
 		const ImDrawVert& v0 = vertices[idx_buffer[i + 0]];
 		const ImDrawVert& v1 = vertices[idx_buffer[i + 1]];
 		const ImDrawVert& v2 = vertices[idx_buffer[i + 2]];
+
+		// Text is common, and is made of textured rectangles. So let's optimize for it.
+		// This assumes the ImGui way to layout text does not change.
+		if (options.optimize_text && i + 6 <= pcmd.ElemCount &&
+		    idx_buffer[i + 3] == idx_buffer[i + 0] && idx_buffer[i + 4] == idx_buffer[i + 2]) {
+			const ImDrawVert& v3 = vertices[idx_buffer[i + 5]];
+
+			if (v0.pos.x == v3.pos.x &&
+			    v1.pos.x == v2.pos.x &&
+			    v0.pos.y == v1.pos.y &&
+			    v2.pos.y == v3.pos.y &&
+			    v0.uv.x == v3.uv.x &&
+			    v1.uv.x == v2.uv.x &&
+			    v0.uv.y == v1.uv.y &&
+			    v2.uv.y == v3.uv.y)
+			{
+				const bool has_uniform_color =
+					v0.col == v1.col &&
+					v0.col == v2.col &&
+					v0.col == v3.col;
+
+				const bool has_texture =
+					v0.uv != white_uv ||
+					v1.uv != white_uv ||
+					v2.uv != white_uv ||
+					v3.uv != white_uv;
+
+				if (has_uniform_color && has_texture)
+				{
+					paint_uniform_textured_rectangle(target, *texture, pcmd.ClipRect, v0, v2, stats);
+					i += 6;
+					continue;
+				}
+			}
+		}
 
 		// A lot of the big stuff are uniformly colored rectangles,
 		// so we can save a lot of CPU by detecting them:
@@ -585,18 +702,21 @@ bool show_options(SwOptions* io_options)
 {
 	assert(io_options);
 	bool changed = false;
+	changed |= ImGui::Checkbox("optimize_text", &io_options->optimize_text);
 	changed |= ImGui::Checkbox("optimize_rectangles", &io_options->optimize_rectangles);
 	return changed;
 }
 
 void show_stats()
 {
-	ImGui::Text("uniform_triangle_pixels:   %7d", s_stats.uniform_triangle_pixels);
-	ImGui::Text("textured_triangle_pixels:  %7d", s_stats.textured_triangle_pixels);
-	ImGui::Text("gradient_triangle_pixels:  %7d", s_stats.gradient_triangle_pixels);
-	ImGui::Text("uniform_rectangle_pixels:  %7.0f", s_stats.uniform_rectangle_pixels);
-	ImGui::Text("textured_rectangle_pixels: %7.0f", s_stats.textured_rectangle_pixels);
-	ImGui::Text("gradient_rectangle_pixels: %7.0f", s_stats.gradient_rectangle_pixels);
+	ImGui::Text("uniform_triangle_pixels:            %7d",   s_stats.uniform_triangle_pixels);
+	ImGui::Text("textured_triangle_pixels:           %7d",   s_stats.textured_triangle_pixels);
+	ImGui::Text("gradient_triangle_pixels:           %7d",   s_stats.gradient_triangle_pixels);
+	ImGui::Text("font_pixels:                        %7d",   s_stats.font_pixels);
+	ImGui::Text("uniform_rectangle_pixels:           %7.0f", s_stats.uniform_rectangle_pixels);
+	ImGui::Text("textured_rectangle_pixels:          %7.0f", s_stats.textured_rectangle_pixels);
+	ImGui::Text("gradient_rectangle_pixels:          %7.0f", s_stats.gradient_rectangle_pixels);
+	ImGui::Text("gradient_textured_rectangle_pixels: %7.0f", s_stats.gradient_textured_rectangle_pixels);
 }
 
 } // namespace imgui_sw

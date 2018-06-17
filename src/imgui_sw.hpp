@@ -18,8 +18,8 @@ namespace imgui_sw {
 
 struct SwOptions
 {
+	bool optimize_text = true;  // No reason to turn this off.
 	bool optimize_rectangles = true; // No reason to turn this off.
-	// TODO: add some options for balancing accuracy and speed?
 };
 
 /// Optional: tweak ImGui style to make it render faster.
