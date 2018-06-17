@@ -210,6 +210,7 @@ void run_gl()
 	gl::bind_imgui_painting();
 
 	double paint_time = 0;
+	bool wireframe = false;
 
 	bool quit = false;
 	while (!quit) {
@@ -225,6 +226,7 @@ void run_gl()
 			ImGui::EndMainMenuBar();
 		}
 		ImGui::Text("Paint time: %.2f ms", 1000 * paint_time);
+		ImGui::Checkbox("wireframe", &wireframe);
 
 		showTestWindows();
 
@@ -232,6 +234,7 @@ void run_gl()
 
 		glClearColor(0.1f, 0.1f, 0.1f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+		glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
 		Timer paint_timer;
 		gl::paint_imgui();
 		paint_time = paint_timer.secs();
