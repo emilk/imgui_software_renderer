@@ -217,7 +217,8 @@ void paint_uniform_rectangle(
 	const PaintTarget& target,
 	const ImVec2&      min_f,
 	const ImVec2&      max_f,
-	const ColorInt&    color)
+	const ColorInt&    color,
+	Stats*             stats)
 {
 	// Integer bounding box [min, max):
 	int min_x_i = static_cast<int>(target.scale.x * min_f.x + 0.5f);
@@ -230,6 +231,8 @@ void paint_uniform_rectangle(
 	min_y_i = std::max(min_y_i, 0);
 	max_x_i = std::min(max_x_i, target.width);
 	max_y_i = std::min(max_y_i, target.height);
+
+	stats->uniform_rectangle_pixels += (max_x_i - min_x_i) * (max_y_i - min_y_i);
 
 	// We often blend the same colors over and over again, so optimize for this (saves 25% total cpu):
 	uint32_t last_target_pixel = target.pixels[min_y_i * target.width + min_x_i];
@@ -357,10 +360,10 @@ void paint_triangle(
 	// Clip against clip_rect:
 	min_x_f = std::max(min_x_f, target.scale.x * clip_rect.x);
 	min_y_f = std::max(min_y_f, target.scale.y * clip_rect.y);
-	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z - 1.5f);
-	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w - 1.5f);
+	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z - 0.5f);
+	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w - 0.5f);
 
-	// Inclusive [min, max] integer bounding box:
+	// Integer bounding box [min, max):
 	int min_x_i = static_cast<int>(min_x_f);
 	int min_y_i = static_cast<int>(min_y_f);
 	int max_x_i = static_cast<int>(max_x_f + 1.0f);
@@ -369,8 +372,8 @@ void paint_triangle(
 	// Clip against render target:
 	min_x_i = std::max(min_x_i, 0);
 	min_y_i = std::max(min_y_i, 0);
-	max_x_i = std::min(max_x_i, target.width - 1);
-	max_y_i = std::min(max_y_i, target.height - 1);
+	max_x_i = std::min(max_x_i, target.width);
+	max_y_i = std::min(max_y_i, target.height);
 
 	// ------------------------------------------------------------------------
 	// Set up interpolation of barycentric coordinates:
@@ -428,12 +431,12 @@ void paint_triangle(
 	uint32_t last_target_pixel = 0;
 	uint32_t last_output = blend(ColorInt(last_target_pixel), ColorInt(v0.col)).toUint32();
 
-	for (int y = min_y_i; y <= max_y_i; ++y) {
+	for (int y = min_y_i; y < max_y_i; ++y) {
 		auto bary = bary_current_row;
 
 		bool has_been_inside_this_row = false;
 
-		for (int x = min_x_i; x <= max_x_i; ++x) {
+		for (int x = min_x_i; x < max_x_i; ++x) {
 			const auto w0 = bary.w0;
 			const auto w1 = bary.w1;
 			const auto w2 = bary.w2;
@@ -472,7 +475,7 @@ void paint_triangle(
 			ImVec4 src_color;
 
 			if (has_uniform_color) {
-				src_color = color_convert_u32_to_float4(v0.col);
+				src_color = c0;
 			} else {
 				stats->gradient_triangle_pixels += 1;
 				src_color = w0 * c0 + w1 * c1 + w2 * c2;
@@ -568,7 +571,7 @@ void paint_draw_cmd(
 			max.y = max3(v0.pos.y, v1.pos.y, v2.pos.y);
 
 			// Not the prettiest way to do this, but it catches all cases
-			// of a rectangle split into two triangle.
+			// of a rectangle split into two triangles.
 			// TODO: Stop it from also assuming duplicate triangles is one rectangle.
 			if ((v0.pos.x == min.x || v0.pos.x == max.x) &&
 				(v0.pos.y == min.y || v0.pos.y == max.y) &&
@@ -600,22 +603,29 @@ void paint_draw_cmd(
 
 				min.x = std::max(min.x, pcmd.ClipRect.x);
 				min.y = std::max(min.y, pcmd.ClipRect.y);
-				max.x = std::min(max.x, pcmd.ClipRect.z);
-				max.y = std::min(max.y, pcmd.ClipRect.w);
+				max.x = std::min(max.x, pcmd.ClipRect.z - 0.5f);
+				max.y = std::min(max.y, pcmd.ClipRect.w - 0.5f);
+
+				if (max.x < min.x || max.y < min.y) { i+=6; continue; } // Completely clipped
 
 				const auto num_pixels = (max.x - min.x) * (max.y - min.y) * target.scale.x * target.scale.y;
 
-				if (!has_texture && has_uniform_color) {
-					paint_uniform_rectangle(target, min, max, ColorInt(v0.col));
-					stats->uniform_rectangle_pixels += num_pixels;
-					i += 6;
-					continue;
-				} else if (has_uniform_color) {
-					// TODO: optimize this path.
-					stats->textured_rectangle_pixels += num_pixels;
-				} else if (!has_texture) {
-					// TODO: optimize this path.
-					stats->gradient_rectangle_pixels += num_pixels;
+				if (has_uniform_color) {
+					if (has_texture) {
+						stats->textured_rectangle_pixels += num_pixels;
+					} else {
+						paint_uniform_rectangle(target, min, max, ColorInt(v0.col), stats);
+						i += 6;
+						continue;
+					}
+				} else {
+					if (has_texture) {
+						// I have never encountered these.
+						stats->gradient_textured_rectangle_pixels += num_pixels;
+					} else {
+						// Color picker. TODO: Optimize
+						stats->gradient_rectangle_pixels += num_pixels;
+					}
 				}
 			}
 		}
