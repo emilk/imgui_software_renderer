@@ -13,6 +13,10 @@ BINARY_NAME="$FOLDER_NAME.bin"
 mkdir -p build
 
 CXX="ccache g++"
+
+# -----------------------------------------------------------------------------
+# Flags for compiler and linker:
+
 CPPFLAGS="--std=c++14"
 # CPPFLAGS="--std=c++1z" # C++17
 
@@ -39,10 +43,9 @@ CPPFLAGS="$CPPFLAGS -Wno-padded"
 CPPFLAGS="$CPPFLAGS -Wno-reserved-id-macro"
 CPPFLAGS="$CPPFLAGS -Wno-unused-macros"
 
-# TEMPORARY:
-# CPPFLAGS="$CPPFLAGS -Wno-unused-function"
-# CPPFLAGS="$CPPFLAGS -Wno-unused-parameter"
-# CPPFLAGS="$CPPFLAGS -Wno-unused-variable"
+# CPPFLAGS="$CPPFLAGS -Wno-unused-function" # Useful during development (TEMPORARY)
+# CPPFLAGS="$CPPFLAGS -Wno-unused-parameter" # Useful during development (TEMPORARY)
+# CPPFLAGS="$CPPFLAGS -Wno-unused-variable" # Useful during development (TEMPORARY)
 
 # Check if clang:ret=0
 ret=0
@@ -65,12 +68,25 @@ CPPFLAGS="$CPPFLAGS -O2 -DNDEBUG"                      # Release build
 
 CPPFLAGS="$CPPFLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS"
 
+# -----------------------------------------------------------------------------
+# Flags for compiler:
+
 COMPILE_FLAGS="$CPPFLAGS"
 COMPILE_FLAGS="$COMPILE_FLAGS -I ."
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party"
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/emath"
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/emilib"
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/visit_struct/include"
+
+# -----------------------------------------------------------------------------
+# Custom compile-time flags:
+
+COMPILE_FLAGS="$COMPILE_FLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1"
+COMPILE_FLAGS="$COMPILE_FLAGS -DLOGURU_REDEFINE_ASSERT=1"
+
+# -----------------------------------------------------------------------------
+# Libraries to link with:
+
 LDLIBS="-lstdc++ -lpthread -ldl"
 LDLIBS="$LDLIBS -lSDL2 -lGLEW"
 # LDLIBS="$LDLIBS -lceres -lglog"
@@ -87,14 +103,13 @@ else
 	LDLIBS="$LDLIBS -lGL -lkqueue"
 fi
 
-COMPILE_FLAGS="$COMPILE_FLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1"
-COMPILE_FLAGS="$COMPILE_FLAGS -DLOGURU_REDEFINE_ASSERT=1"
+# -----------------------------------------------------------------------------
 
 echo "Compiling..."
 OBJECTS=""
 for source_path in src/*.cpp; do
 	rel_source_path=${source_path#src/} # Remove src/ path prefix
-	obj_path="build/${rel_source_path%.*}.o" # Strip file extension
+	obj_path="build/${rel_source_path}.o"
 	OBJECTS="$OBJECTS $obj_path"
 	rm -f $obj_path
 	$CXX $COMPILE_FLAGS -c $source_path -o $obj_path &
