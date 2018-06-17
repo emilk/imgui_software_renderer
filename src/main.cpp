@@ -112,14 +112,14 @@ void run_software()
 		SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, width_pixels, height_pixels);
 	CHECK_NOTNULL_F(texture);
 
-	bool full_res = (width_pixels == width_points);
-
 	std::vector<uint32_t> pixel_buffer(width_pixels * height_pixels, 0);
 	std::vector<uint32_t> point_buffer(width_points * height_points, 0);
 
 	imgui_sw::bind_imgui_painting();
 
 	imgui_sw::SwOptions sw_options;
+	bool full_res = (width_pixels == width_points);
+	bool fast_style = false;
 
 	double paint_time = 0;
 	double upsample_time = 0;
@@ -142,8 +142,12 @@ void run_software()
 
 		ImGui::SetNextWindowPos(ImVec2{32.0f, 32.0f});
 		if (ImGui::Begin("Settings")) {
-			if (ImGui::Button("Tweak ImGui style for speed")) {
-				imgui_sw::make_style_fast();
+			if (ImGui::Checkbox("Tweak ImGui style for speed", &fast_style)) {
+				if (fast_style) {
+					imgui_sw::make_style_fast();
+				} else {
+					imgui_sw::restore_style();
+				}
 			}
 
 			ImGui::Checkbox("full_res", &full_res);
@@ -170,7 +174,7 @@ void run_software()
 			frame_paint_time = paint_timer.secs();
 		} else {
 			// Render ImGui in low resolution:
-			CHECK_LT_F(width_points, width_pixels);
+			CHECK_LE_F(width_points, width_pixels);
 			std::fill_n(point_buffer.data(), point_buffer.size(), 0x19191919u);
 			Timer paint_timer;
 			paint_imgui(point_buffer.data(), width_points, height_points, sw_options);

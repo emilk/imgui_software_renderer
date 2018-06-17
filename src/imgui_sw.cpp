@@ -526,7 +526,15 @@ void make_style_fast()
 	style.AntiAliasedLines = false;
 	style.AntiAliasedFill = false;
 	style.WindowRounding = 0;
-	// style.Colors[ImGuiCol_WindowBg].w = 1.0; // Doesn't actually help much.
+}
+
+void restore_style()
+{
+	ImGuiStyle& style = ImGui::GetStyle();
+	const ImGuiStyle default_style = ImGuiStyle();
+	style.AntiAliasedLines = default_style.AntiAliasedLines;
+	style.AntiAliasedFill = default_style.AntiAliasedFill;
+	style.WindowRounding = default_style.WindowRounding;
 }
 
 void bind_imgui_painting()

@@ -25,6 +25,9 @@ struct SwOptions
 /// Optional: tweak ImGui style to make it render faster.
 void make_style_fast();
 
+/// Undo what make_style_fast did.
+void restore_style();
+
 /// Call once a the start of your program.
 void bind_imgui_painting();
 
