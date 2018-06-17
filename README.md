@@ -4,6 +4,9 @@ I built it not out of a specific need, but because it was fun.
 The goal was to get something accurate and decently fast in not too many lines of code.
 It renders a complex GUI in 1-10 milliseconds on a modern laptop.
 
+# How to use:
+Just copy `imgui_sw.hpp` and `imgui_sw.cpp`. There are no other dependencies beside Dear ImGui.
+
 # Example:
 This renders in 7 ms on my MacBook Pro:
 
@@ -11,7 +14,7 @@ This renders in 7 ms on my MacBook Pro:
 
 # Future work:
 * We do not yet support painting with any other texture than the default font texture.
-* Make OpenGL dependency optional
+* Allow compiling the example app without OpenGL.
 * Optimize rendering of gradient rectangles (common for color pickers)
 
 # How to test it
