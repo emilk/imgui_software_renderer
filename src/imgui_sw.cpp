@@ -71,6 +71,7 @@ ColorInt blend(ColorInt target, ColorInt source)
 }
 
 // ----------------------------------------------------------------------------
+// Used for interpolating vertex attributes (color and texture coordinates) in a triangle.
 
 struct Barycentric
 {
@@ -105,6 +106,11 @@ ImVec2 operator*(const float f, const ImVec2& v)
 ImVec2 operator+(const ImVec2& a, const ImVec2& b)
 {
 	return ImVec2{a.x + b.x, a.y + b.y};
+}
+
+ImVec2 operator-(const ImVec2& a, const ImVec2& b)
+{
+	return ImVec2{a.x - b.x, a.y - b.y};
 }
 
 bool operator!=(const ImVec2& a, const ImVec2& b)
@@ -143,6 +149,33 @@ ImU32 color_convert_float4_to_u32(const ImVec4& in)
 	out |= uint32_t(in.z * 255.0f + 0.5f) << IM_COL32_B_SHIFT;
 	out |= uint32_t(in.w * 255.0f + 0.5f) << IM_COL32_A_SHIFT;
 	return out;
+}
+
+// ----------------------------------------------------------------------------
+// For fast and subpixel-perfect triangle rendering we used fixed point arithmetic.
+// To keep the code simple we use 64 bits to avoid overflows.
+
+using Int = int64_t;
+const Int kFixedBias = 256;
+
+struct Point
+{
+	Int x, y;
+};
+
+Int orient2d(const Point& a, const Point& b, const Point& c)
+{
+	return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+Int as_int(float v)
+{
+	return static_cast<Int>(std::floor(v * kFixedBias));
+}
+
+Point as_point(ImVec2 v)
+{
+	return Point{as_int(v.x), as_int(v.y)};
 }
 
 // ----------------------------------------------------------------------------
@@ -200,6 +233,17 @@ void paint_uniform_rectangle(
 	}
 }
 
+// When two triangles share an edge, we want to draw the pixels on that edge exactly once.
+// The edge will be the same, but the direction will be the opposite
+// (assuming the two triangles have the same winding order).
+// Which edge wins? This functions decides.
+bool is_dominant_edge(ImVec2 edge)
+{
+	// return edge.x < 0 || (edge.x == 0 && edge.y > 0);
+	return edge.y > 0 || (edge.y == 0 && edge.x < 0);
+}
+
+// Handles triangles in any winding order (CW/CCW)
 void paint_triangle(
 	const PaintTarget& target,
 	const Texture*     texture,
@@ -213,8 +257,9 @@ void paint_triangle(
 	const ImVec2 p1 = ImVec2(target.scale.x * v1.pos.x, target.scale.y * v1.pos.y);
 	const ImVec2 p2 = ImVec2(target.scale.x * v2.pos.x, target.scale.y * v2.pos.y);
 
-	const auto rect_area = barycentric(p0, p1, p2); // Can be negative
+	const auto rect_area = barycentric(p0, p1, p2); // Can be positive or negative depending on winding order
 	if (rect_area == 0.0f) { return; }
+	// if (rect_area < 0.0f) { return paint_triangle(target, texture, clip_rect, v0, v2, v1, stats); }
 
 	// Find bounding box:
 	float min_x_f = min3(p0.x, p1.x, p2.x);
@@ -222,19 +267,19 @@ void paint_triangle(
 	float max_x_f = max3(p0.x, p1.x, p2.x);
 	float max_y_f = max3(p0.y, p1.y, p2.y);
 
-	// Clamp to clip_rect:
+	// Clip against clip_rect:
 	min_x_f = std::max(min_x_f, target.scale.x * clip_rect.x);
 	min_y_f = std::max(min_y_f, target.scale.y * clip_rect.y);
-	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z);
-	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w);
+	max_x_f = std::min(max_x_f, target.scale.x * clip_rect.z - 1.5f);
+	max_y_f = std::min(max_y_f, target.scale.y * clip_rect.w - 1.5f);
 
 	// Inclusive [min, max] integer bounding box:
-	int min_x_i = static_cast<int>(min_x_f + 0.5f);
-	int min_y_i = static_cast<int>(min_y_f + 0.5f);
-	int max_x_i = static_cast<int>(max_x_f + 0.5f);
-	int max_y_i = static_cast<int>(max_y_f + 0.5f);
+	int min_x_i = static_cast<int>(min_x_f);
+	int min_y_i = static_cast<int>(min_y_f);
+	int max_x_i = static_cast<int>(max_x_f + 1.0f);
+	int max_y_i = static_cast<int>(max_y_f + 1.0f);
 
-	// Clamp to render target:
+	// Clip against render target:
 	min_x_i = std::max(min_x_i, 0);
 	min_y_i = std::max(min_y_i, 0);
 	max_x_i = std::min(max_x_i, target.width - 1);
@@ -272,6 +317,19 @@ void paint_triangle(
 	Barycentric bary_current_row = bary_topleft;
 
 	// ------------------------------------------------------------------------
+	// For pixel-perfect inside/outside testing:
+
+	const int sign = rect_area > 0 ? 1 : -1; // winding order?
+
+	const int bias0i = is_dominant_edge(p2 - p1) ? 0 : -1;
+	const int bias1i = is_dominant_edge(p0 - p2) ? 0 : -1;
+	const int bias2i = is_dominant_edge(p1 - p0) ? 0 : -1;
+
+	const auto p0i = as_point(p0);
+	const auto p1i = as_point(p1);
+	const auto p2i = as_point(p2);
+
+	// ------------------------------------------------------------------------
 
 	const bool has_uniform_color = (v0.col == v1.col && v0.col == v2.col);
 
@@ -292,8 +350,14 @@ void paint_triangle(
 			const auto w2 = bary.w2;
 			bary += bary_dx;
 
-			const float kEps = 1e-4f;
-			if (w0 < -kEps || w1 < -kEps || w2 < -kEps) { continue; } // Outside triangle
+			{
+				// Inside/outside test:
+				const auto p = Point{kFixedBias * x + kFixedBias / 2, kFixedBias * y + kFixedBias / 2};
+				const auto w0i = sign * orient2d(p1i, p2i, p) + bias0i;
+				const auto w1i = sign * orient2d(p2i, p0i, p) + bias1i;
+				const auto w2i = sign * orient2d(p0i, p1i, p) + bias2i;
+				if (w0i < 0 || w1i < 0 || w2i < 0) { continue; }
+			}
 
 			uint32_t& target_pixel = target.pixels[y * target.width + x];
 
