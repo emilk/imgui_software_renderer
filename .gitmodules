@@ -1,12 +1,6 @@
-[submodule "third_party/emath"]
-	path = third_party/emath
-	url = git@github.com:emilk/emath.git
 [submodule "third_party/emilib"]
 	path = third_party/emilib
 	url = git@github.com:emilk/emilib.git
-[submodule "third_party/stb"]
-	path = third_party/stb
-	url = git@github.com:nothings/stb.git
 [submodule "third_party/imgui"]
 	path = third_party/imgui
 	url = git@github.com:ocornut/imgui.git

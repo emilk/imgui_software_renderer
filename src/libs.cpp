@@ -8,5 +8,4 @@
 #define LOGURU_IMPLEMENTATION 1
 #include <loguru.hpp>
 
-#include <emath/unity_build.cpp>
 #include <emilib/unity_build.cpp>
