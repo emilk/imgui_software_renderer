@@ -4,19 +4,13 @@ I built it not out of a specific need, but because it was fun.
 The goal was to get something accurate and decently fast in not too many lines of code.
 It renders a complex GUI in 1-10 milliseconds on a modern laptop.
 
-# How to use:
-Just copy `imgui_sw.hpp` and `imgui_sw.cpp`. There are no other dependencies beside Dear ImGui.
+## What it is:
+As the name implies, this is a software renderer for ImGui. It does not handle any windows or input. In the supplied example I use [SDL2](www.libsdl.org) for that.
 
-# Example:
-This renders in 7 ms on my MacBook Pro:
+## How to use it
+Just copy `imgui_sw.hpp` and `imgui_sw.cpp`. There are no other dependencies beside Dear ImGui. Requires C++11.
 
-![Software rendered](screenshots/imgui_sw.png)
-
-# Future work:
-* We do not yet support painting with any other texture than the default font texture.
-* Optimize rendering of gradient rectangles (common for color pickers)
-
-# How to test it
+## How to test it
 ```
 git clone https://github.com/emilk/imgui_software_renderer.git
 cd imgui_software_renderer
@@ -24,7 +18,18 @@ git submodule update --init --recursive
 ./build_and_run.sh
 ```
 
-# License:
+For the example to work you will need to have SDL2 on your system.
+
+## Example:
+This renders in 7 ms on my MacBook Pro:
+
+![Software rendered](screenshots/imgui_sw.png)
+
+## Future work:
+* We do not yet support painting with any other texture than the default font texture.
+* Optimize rendering of gradient rectangles (common for color pickers)
+
+## License:
 This software is dual-licensed to the public domain and under the following
 license: you are granted a perpetual, irrevocable license to copy, modify,
 publish, and distribute this file as you see fit.
