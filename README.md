@@ -14,7 +14,6 @@ This renders in 7 ms on my MacBook Pro:
 
 # Future work:
 * We do not yet support painting with any other texture than the default font texture.
-* Allow compiling the example app without OpenGL.
 * Optimize rendering of gradient rectangles (common for color pickers)
 
 # How to test it

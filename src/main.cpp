@@ -5,10 +5,12 @@
 #include <emilib/timer.hpp>
 #include <loguru.hpp>
 
-// For gl path:
-#include <emilib/gl_lib_opengl.hpp>
-#include <emilib/gl_lib_sdl.hpp>
-#include <emilib/imgui_gl_lib.hpp>
+#ifdef OPENGL_REFERENCE_RENDERER
+	// For gl path:
+	#include <emilib/gl_lib_opengl.hpp>
+	#include <emilib/gl_lib_sdl.hpp>
+	#include <emilib/imgui_gl_lib.hpp>
+#endif // OPENGL_REFERENCE_RENDERER
 
 #include "imgui_sw.hpp"
 
@@ -193,6 +195,7 @@ void run_software()
 	}
 }
 
+#ifdef OPENGL_REFERENCE_RENDERER
 void run_gl()
 {
 	sdl::Params sdl_params;
@@ -235,12 +238,16 @@ void run_gl()
 		SDL_GL_SwapWindow(sdl.window);
 	}
 }
+#endif // OPENGL_REFERENCE_RENDERER
 
 int main(int argc, char* argv[])
 {
 	loguru::g_colorlogtostderr = false;
 	loguru::init(argc, argv);
 
-	run_software();
-	// run_gl(); // Reference renderer.
+	#ifdef OPENGL_REFERENCE_RENDERER
+		run_gl();
+	#else
+		run_software();
+	#endif
 }

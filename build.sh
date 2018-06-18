@@ -12,15 +12,20 @@ BINARY_NAME="$FOLDER_NAME.bin"
 
 mkdir -p build
 
+OPENGL_REFERENCE_RENDERER=false # Set to true to try the OpenGL reference renderer
+
 CXX="ccache g++"
 
 # -----------------------------------------------------------------------------
 # Flags for compiler and linker:
 
-CPPFLAGS="--std=c++14"
-# CPPFLAGS="--std=c++1z" # C++17
+if $OPENGL_REFERENCE_RENDERER; then
+	CPPFLAGS="--std=c++14"
+else
+	CPPFLAGS="--std=c++11"
+fi
 
-CPPFLAGS="$CPPFLAGS -Werror -Wall -Wpedantic -Wextra -Weverything -Wunreachable-code"
+# CPPFLAGS="$CPPFLAGS -Werror -Wall -Wpedantic -Wextra -Weverything -Wunreachable-code" # These can all be turned on, but are off just to make the example compile everywhere.
 
 CPPFLAGS="$CPPFLAGS -Wno-double-promotion" # Implicitly converting a float to a double is fine
 CPPFLAGS="$CPPFLAGS -Wno-float-equal" # Comparing floating point numbers is fine if you know what you're doing
@@ -74,9 +79,7 @@ CPPFLAGS="$CPPFLAGS -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS"
 COMPILE_FLAGS="$CPPFLAGS"
 COMPILE_FLAGS="$COMPILE_FLAGS -I ."
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party"
-COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/emath"
 COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/emilib"
-COMPILE_FLAGS="$COMPILE_FLAGS -isystem third_party/visit_struct/include"
 
 # -----------------------------------------------------------------------------
 # Custom compile-time flags:
@@ -88,19 +91,16 @@ COMPILE_FLAGS="$COMPILE_FLAGS -DLOGURU_REDEFINE_ASSERT=1"
 # Libraries to link with:
 
 LDLIBS="-lstdc++ -lpthread -ldl"
-LDLIBS="$LDLIBS -lSDL2 -lGLEW"
-# LDLIBS="$LDLIBS -lceres -lglog"
-# LDLIBS="$LDLIBS -lfftw3f"
+LDLIBS="$LDLIBS -lSDL2"
 
-# Platform specific flags:
-if [ "$(uname)" == "Darwin" ]; then
-	COMPILE_FLAGS="$COMPILE_FLAGS -isystem /opt/local/include/eigen3" # port
-	COMPILE_FLAGS="$COMPILE_FLAGS -isystem /usr/local/include/eigen3" # brew
-	LDLIBS="$LDLIBS -framework OpenAL"
-	LDLIBS="$LDLIBS -framework OpenGL"
-else
-	COMPILE_FLAGS="$COMPILE_FLAGS -isystem /usr/include/eigen3"
-	LDLIBS="$LDLIBS -lGL -lkqueue"
+if $OPENGL_REFERENCE_RENDERER; then
+	COMPILE_FLAGS="$COMPILE_FLAGS -DOPENGL_REFERENCE_RENDERER"
+	LDLIBS="$LDLIBS -lGLEW"
+	if [ "$(uname)" == "Darwin" ]; then
+		LDLIBS="$LDLIBS -framework OpenGL"
+	else
+		LDLIBS="$LDLIBS -lGL"
+	fi
 fi
 
 # -----------------------------------------------------------------------------
