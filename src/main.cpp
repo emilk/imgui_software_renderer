@@ -78,17 +78,8 @@ void run_software()
 	int height_points = 1024;
 
 	CHECK_EQ_F(SDL_Init(SDL_INIT_EVENTS | SDL_INIT_VIDEO), 0, "SDL_Init fail: %s\n", SDL_GetError());
-
-	int window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
-	// window_flags |= SDL_WINDOW_ALLOW_HIGHDPI;
-
-#if TARGET_OS_IPHONE
-	window_flags |= SDL_WINDOW_BORDERLESS; // Hides the status bar
-#else
-	// window_flags |= SDL_WINDOW_RESIZABLE;
-#endif
-
-	const auto window = SDL_CreateWindow("ImGui Software Renderer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width_points, height_points, window_flags);
+	const auto window = SDL_CreateWindow("ImGui Software Renderer Example", SDL_WINDOWPOS_UNDEFINED,
+		SDL_WINDOWPOS_UNDEFINED, width_points, height_points, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
 	CHECK_NOTNULL_F(window, "Failed to create window: %s", SDL_GetError());
 
 	SDL_GetWindowSize(window, &width_points, &height_points);
