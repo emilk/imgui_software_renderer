@@ -2,7 +2,6 @@
 
 #include <emilib/imgui_helpers.hpp>
 #include <emilib/imgui_sdl.hpp>
-#include <emilib/irange.hpp>
 #include <emilib/timer.hpp>
 #include <loguru.hpp>
 
@@ -183,9 +182,9 @@ void run_software()
 			// Now upsample it (TODO: a faster way).
 			Timer upsample_timer;
 			const int scale = height_pixels / height_points;
-			for (const auto y_px : irange(0, height_pixels)) {
+			for (int y_px = 0; y_px < height_pixels; ++y_px) {
 				const auto y_pts = y_px / scale;
-				for (const auto x_px : irange(0, width_pixels)) {
+				for (int x_px = 0; x_px < width_pixels; ++x_px) {
 					const auto x_pts = x_px / scale;
 					pixel_buffer[y_px * width_pixels + x_px] = point_buffer[y_pts * width_points + x_pts];
 				}
