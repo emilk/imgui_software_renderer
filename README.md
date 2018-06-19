@@ -25,9 +25,14 @@ This renders in 7 ms on my MacBook Pro:
 
 ![Software rendered](screenshots/imgui_sw.png)
 
+## Alternatives
+There is another software rasterizer for ImGui (which I did not know about when I wrote mine) at https://github.com/sronsse/imgui/tree/sw_rasterizer_example/examples/sdl_sw_example.
+I have not compared the two (yet).
+
 ## Future work:
 * We do not yet support painting with any other texture than the default font texture.
 * Optimize rendering of gradient rectangles (common for color pickers)
+* Compare my software renderer to [the one by](https://github.com/sronsse/imgui/tree/sw_rasterizer_example/examples/sdl_sw_example) @sronsse
 
 ## License:
 This software is dual-licensed to the public domain and under the following
